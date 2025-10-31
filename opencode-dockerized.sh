@@ -56,8 +56,8 @@ check_config() {
         missing_files+=("$HOME/.config/opencode/opencode.json")
     fi
     
-    if [ ! -f "$HOME/.local/share/opencode/auth.json" ]; then
-        missing_files+=("$HOME/.local/share/opencode/auth.json")
+    if [ ! -d "$HOME/.local/share/opencode" ]; then
+        missing_files+=("$HOME/.local/share/opencode/")
     fi
     
     if [ ${#missing_files[@]} -gt 0 ]; then
@@ -68,9 +68,10 @@ check_config() {
         print_info "OpenCode will run but may need configuration. Run 'opencode auth login' inside the container."
     fi
     
-    # Ensure session storage directories exist
-    mkdir -p "$HOME/.local/share/opencode/log" 2>/dev/null || true
-    mkdir -p "$HOME/.local/share/opencode/project" 2>/dev/null || true
+    # Ensure OpenCode storage directory exists
+    # According to docs: https://opencode.ai/docs/troubleshooting/#storage
+    mkdir -p "$HOME/.local/share/opencode" 2>/dev/null || true
+    mkdir -p "$HOME/.cache/opencode" 2>/dev/null || true
 }
 
 # Function to run OpenCode
@@ -98,21 +99,19 @@ run_opencode() {
         volume_args="$volume_args -v $HOME/.config/opencode/agent:/home/coder/.config/opencode/agent:ro"
     fi
     
-    # OpenCode authentication (optional)
-    if [ -f "$HOME/.local/share/opencode/auth.json" ]; then
-        volume_args="$volume_args -v $HOME/.local/share/opencode/auth.json:/home/coder/.local/share/opencode/auth.json:ro"
+    # OpenCode data directory (read-write for auth, logs, sessions, storage)
+    # Mount entire .local/share/opencode directory
+    if [ -d "$HOME/.local/share/opencode" ]; then
+        volume_args="$volume_args -v $HOME/.local/share/opencode:/home/coder/.local/share/opencode"
     else
-        print_warning "OpenCode auth not found at $HOME/.local/share/opencode/auth.json"
+        print_warning "OpenCode data directory not found at $HOME/.local/share/opencode"
         print_info "You'll need to run 'opencode auth login' inside the container"
     fi
-    
-    # OpenCode session storage (read-write for session persistence)
-    if [ -d "$HOME/.local/share/opencode/log" ]; then
-        volume_args="$volume_args -v $HOME/.local/share/opencode/log:/home/coder/.local/share/opencode/log"
-    fi
-    
-    if [ -d "$HOME/.local/share/opencode/project" ]; then
-        volume_args="$volume_args -v $HOME/.local/share/opencode/project:/home/coder/.local/share/opencode/project"
+
+    # OpenCode provider package cache (improves startup time and prevents API errors)
+    # See: https://opencode.ai/docs/troubleshooting/#ai_apicallerror-and-provider-package-issues
+    if [ -d "$HOME/.cache/opencode" ]; then
+        volume_args="$volume_args -v $HOME/.cache/opencode:/home/coder/.cache/opencode"
     fi
     
     # Gradle properties (optional)

@@ -29,10 +29,9 @@ if [ "$TARGET_UID" != "$CURRENT_UID" ] || [ "$TARGET_GID" != "$CURRENT_GID" ]; t
     chown -R "$TARGET_UID:$TARGET_GID" /home/coder 2>/dev/null || true
 fi
 
-# Fix ownership of workspace (if it exists and is writable)
-if [ -d "/workspace" ]; then
-    chown -R "$TARGET_UID:$TARGET_GID" /workspace 2>/dev/null || true
-fi
+# NOTE: We do NOT change ownership of /workspace
+# The workspace is a host mount and should maintain host permissions
+# OpenCode runs as the host user (via UID/GID mapping) so it already has the right permissions
 
 # Switch to coder user and execute the command
 # Set HOME explicitly to ensure it points to /home/coder

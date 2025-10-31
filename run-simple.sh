@@ -29,9 +29,13 @@ VOLUME_ARGS="-v $PROJECT_DIR:/workspace"
 [ -d "$HOME/.config/opencode/agent" ] && \
     VOLUME_ARGS="$VOLUME_ARGS -v $HOME/.config/opencode/agent:/home/coder/.config/opencode/agent:ro"
 
-# OpenCode authentication (optional)
-[ -f "$HOME/.local/share/opencode/auth.json" ] && \
-    VOLUME_ARGS="$VOLUME_ARGS -v $HOME/.local/share/opencode/auth.json:/home/coder/.local/share/opencode/auth.json:ro"
+# OpenCode data directory (read-write for auth, logs, sessions, storage)
+[ -d "$HOME/.local/share/opencode" ] && \
+    VOLUME_ARGS="$VOLUME_ARGS -v $HOME/.local/share/opencode:/home/coder/.local/share/opencode"
+
+# OpenCode provider package cache (optional)
+[ -d "$HOME/.cache/opencode" ] && \
+    VOLUME_ARGS="$VOLUME_ARGS -v $HOME/.cache/opencode:/home/coder/.cache/opencode"
 
 # Gradle properties (optional)
 [ -f "$HOME/.gradle/gradle.properties" ] && \

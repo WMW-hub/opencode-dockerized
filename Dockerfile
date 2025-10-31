@@ -30,6 +30,7 @@ RUN if id -u 1000 >/dev/null 2>&1; then \
 # Create necessary directories with proper permissions
 RUN mkdir -p /home/coder/.config/opencode && \
     mkdir -p /home/coder/.local/share/opencode && \
+    mkdir -p /home/coder/.cache/opencode && \
     mkdir -p /home/coder/.gradle && \
     mkdir -p /home/coder/.npm && \
     chown -R coder:coder /home/coder

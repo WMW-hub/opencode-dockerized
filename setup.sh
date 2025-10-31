@@ -42,12 +42,9 @@ echo ""
 ensure_dir "$HOME/.config/opencode"
 ensure_dir "$HOME/.config/opencode/agent"
 ensure_dir "$HOME/.local/share/opencode"
-ensure_dir "$HOME/.local/share/opencode/log"
-ensure_dir "$HOME/.local/share/opencode/project"
 
 # Check/create OpenCode config files
 ensure_file "$HOME/.config/opencode/opencode.json" '{}'
-ensure_file "$HOME/.local/share/opencode/auth.json" '{}'
 
 echo ""
 echo -e "${GREEN}Setup complete!${NC}"
