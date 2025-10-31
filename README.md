@@ -17,7 +17,8 @@ Run OpenCode in a secure, isolated Docker container with controlled access to yo
 ## 🔒 Security Features
 
 - **Isolated Environment** - OpenCode only has access to the mounted project directory
-- **Read-only Configuration** - All configuration files are mounted read-only
+- **Read-only Configuration** - All configuration files are mounted read-only (except session storage)
+- **Session Persistence** - Logs and project session data persist across container restarts
 - **Non-root User** - Runs as non-root user with UID/GID matching your host user
 - **Limited Blast Radius** - Commands like `rm -rf .` only affect the project directory, not your entire system
 
@@ -27,6 +28,8 @@ Run OpenCode in a secure, isolated Docker container with controlled access to yo
 2. **OpenCode configuration** on your host machine (optional):
    - `~/.config/opencode/opencode.json` - OpenCode settings
    - `~/.local/share/opencode/auth.json` - Authentication credentials
+   - `~/.local/share/opencode/log/` - Application logs (auto-created)
+   - `~/.local/share/opencode/project/` - Session and project data (auto-created)
    - `~/.config/opencode/agent/` - Custom agents
 3. **Optional configuration files**:
    - `~/.gradle/gradle.properties` - Gradle configuration
@@ -181,6 +184,8 @@ TERM=xterm-256color
 | `~/.config/opencode/opencode.json` | `/home/coder/.config/opencode/opencode.json` | read-only | OpenCode settings |
 | `~/.config/opencode/agent/` | `/home/coder/.config/opencode/agent/` | read-only | Custom agents |
 | `~/.local/share/opencode/auth.json` | `/home/coder/.local/share/opencode/auth.json` | read-only | Authentication |
+| `~/.local/share/opencode/log/` | `/home/coder/.local/share/opencode/log/` | read-write | Application logs |
+| `~/.local/share/opencode/project/` | `/home/coder/.local/share/opencode/project/` | read-write | Session & project data |
 | `~/.gradle/gradle.properties` | `/home/coder/.gradle/gradle.properties` | read-only | Gradle config |
 | `~/.npmrc` | `/home/coder/.npmrc` | read-only | NPM config |
 

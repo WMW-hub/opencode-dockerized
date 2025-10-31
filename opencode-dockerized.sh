@@ -67,6 +67,10 @@ check_config() {
         done
         print_info "OpenCode will run but may need configuration. Run 'opencode auth login' inside the container."
     fi
+    
+    # Ensure session storage directories exist
+    mkdir -p "$HOME/.local/share/opencode/log" 2>/dev/null || true
+    mkdir -p "$HOME/.local/share/opencode/project" 2>/dev/null || true
 }
 
 # Function to run OpenCode
@@ -100,6 +104,15 @@ run_opencode() {
     else
         print_warning "OpenCode auth not found at $HOME/.local/share/opencode/auth.json"
         print_info "You'll need to run 'opencode auth login' inside the container"
+    fi
+    
+    # OpenCode session storage (read-write for session persistence)
+    if [ -d "$HOME/.local/share/opencode/log" ]; then
+        volume_args="$volume_args -v $HOME/.local/share/opencode/log:/home/coder/.local/share/opencode/log"
+    fi
+    
+    if [ -d "$HOME/.local/share/opencode/project" ]; then
+        volume_args="$volume_args -v $HOME/.local/share/opencode/project:/home/coder/.local/share/opencode/project"
     fi
     
     # Gradle properties (optional)
