@@ -75,11 +75,13 @@ cd /path/to/opencode-dockerized
 
 ```bash
 # For Bash users - add to ~/.bashrc
-echo "alias ocd='/path/to/opencode-dockerized/opencode-dockerized.sh run'" >> ~/.bashrc
+echo "alias ocd='/path/to/opencode-dockerized/opencode-dockerized.sh'" >> ~/.bashrc
+echo "alias ocdr='/path/to/opencode-dockerized/opencode-dockerized.sh run'" >> ~/.bashrc
 source ~/.bashrc
 
 # For Zsh users - add to ~/.zshrc
-echo "alias ocd='/path/to/opencode-dockerized/opencode-dockerized.sh run'" >> ~/.zshrc
+echo "alias ocd='/path/to/opencode-dockerized/opencode-dockerized.sh'" >> ~/.zshrc
+echo "alias ocdr='/path/to/opencode-dockerized/opencode-dockerized.sh run'" >> ~/.zshrc
 source ~/.zshrc
 
 # Then use it anywhere

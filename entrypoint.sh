@@ -3,23 +3,54 @@ set -e
 
 # This script runs as root and handles UID/GID mapping before switching to coder user
 
+# Check if we actually need Docker for this command
+NEEDS_DOCKER=true
+if [ "$1" = "opencode" ] && [ "$2" = "--version" ]; then
+    NEEDS_DOCKER=false
+elif [ "$1" = "npm" ]; then
+    NEEDS_DOCKER=false
+fi
+
 # Start Docker daemon if not already running (Docker-in-Docker)
-if [ ! -S /var/run/docker.sock ]; then
-    echo "Starting Docker daemon..."
-    dockerd > /tmp/dockerd.log 2>&1 &
-    
-    # Wait for Docker to be ready
-    timeout=30
-    while [ $timeout -gt 0 ] && ! docker info >/dev/null 2>&1; do
-        sleep 1
-        timeout=$((timeout - 1))
+# Only if Docker socket is not available and we actually need Docker
+if [ "$NEEDS_DOCKER" = "true" ]; then
+    # First, check if Docker socket is available from host (mounted)
+    docker_socket_ready=false
+    for i in {1..5}; do
+        if [ -S /var/run/docker.sock ] && docker info >/dev/null 2>&1; then
+            docker_socket_ready=true
+            echo "Docker socket detected and working - using host Docker daemon"
+            break
+        fi
+        if [ $i -lt 5 ]; then
+            sleep 0.5
+        fi
     done
-    
-    if ! docker info >/dev/null 2>&1; then
-        echo "ERROR: Docker daemon failed to start. Check /tmp/dockerd.log"
-        exit 1
+
+    # Only start Docker daemon if socket is not available/ready
+    if ! $docker_socket_ready; then
+        if [ -S /var/run/docker.sock ]; then
+            # Socket exists but not responding, likely a permission issue
+            echo "WARNING: Docker socket exists but is not responding. May be a permission issue."
+        else
+            echo "Starting Docker daemon..."
+            dockerd > /tmp/dockerd.log 2>&1 &
+            
+            # Wait for Docker to be ready
+            timeout=30
+            while [ $timeout -gt 0 ] && ! docker info >/dev/null 2>&1; do
+                sleep 1
+                timeout=$((timeout - 1))
+            done
+            
+            if ! docker info >/dev/null 2>&1; then
+                echo "ERROR: Docker daemon failed to start. Check /tmp/dockerd.log"
+                cat /tmp/dockerd.log 2>&1 || true
+                exit 1
+            fi
+            echo "Docker daemon started successfully"
+        fi
     fi
-    echo "Docker daemon started successfully"
 fi
 
 # Fix Docker socket permissions if it's mounted from host
