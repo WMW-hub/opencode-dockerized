@@ -7,7 +7,6 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE_NAME="opencode-dockerized:latest"
-CONTAINER_NAME="opencode-dockerized"
 
 # Colors for output
 RED='\033[0;31m'
@@ -81,8 +80,15 @@ run_opencode() {
     # Convert to absolute path
     project_dir="$(cd "$project_dir" && pwd)"
     
+    # Generate unique container name based on project directory and random suffix
+    # Use basename and random suffix to allow multiple instances per directory
+    local dir_name=$(basename "$project_dir")
+    local random_suffix=$(head -c 4 /dev/urandom | od -An -tx1 | tr -d ' ')
+    local container_name="opencode-${dir_name}-${random_suffix}"
+    
     print_info "Starting OpenCode in Docker..."
     print_info "Project directory: $project_dir"
+    print_info "Container name: $container_name"
     
     # Build volume mount arguments - only mount files that exist
     local volume_args="-v $project_dir:/workspace"
@@ -97,6 +103,11 @@ run_opencode() {
     # OpenCode agent (optional)
     if [ -d "$HOME/.config/opencode/agent" ]; then
         volume_args="$volume_args -v $HOME/.config/opencode/agent:/home/coder/.config/opencode/agent:ro"
+    fi
+    
+    # OpenCode AGENTS.md (optional)
+    if [ -f "$HOME/.config/opencode/AGENTS.md" ]; then
+        volume_args="$volume_args -v $HOME/.config/opencode/AGENTS.md:/home/coder/.config/opencode/AGENTS.md:ro"
     fi
     
     # OpenCode data directory (read-write for auth, logs, sessions, storage)
@@ -124,16 +135,13 @@ run_opencode() {
         volume_args="$volume_args -v $HOME/.npmrc:/home/coder/.npmrc:ro"
     fi
     
-    # Check if container already exists
-    if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-        print_info "Removing existing container..."
-        docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1
-    fi
+    # Note: Each run gets a unique container name, so no cleanup needed
+    # The --rm flag ensures automatic cleanup when the container exits
     
     # Run OpenCode in Docker (without security-opt to allow entrypoint to work)
     # Mount Docker socket to allow Docker-in-Docker operations
     docker run -it --rm \
-        --name "$CONTAINER_NAME" \
+        --name "$container_name" \
         --network host \
         -v /var/run/docker.sock:/var/run/docker.sock \
         -e HOST_UID="$(id -u)" \
