@@ -161,6 +161,11 @@ run_opencode() {
         volume_args="$volume_args -v $HOME/.cache/opencode:/home/coder/.cache/opencode"
     fi
     
+    # MCP authentication directory (optional)
+    if [ -d "$HOME/.mcp-auth" ]; then
+        volume_args="$volume_args -v $HOME/.mcp-auth:/home/coder/.mcp-auth:ro"
+    fi
+    
     # Gradle properties (optional)
     if [ -f "$HOME/.gradle/gradle.properties" ]; then
         volume_args="$volume_args -v $HOME/.gradle/gradle.properties:/home/coder/.gradle/gradle.properties:ro"
