@@ -8,7 +8,7 @@ _opencode_dockerized() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts="run build update version help --help -h"
+    opts="run auth build update version help --help -h"
 
     case "${prev}" in
         run)

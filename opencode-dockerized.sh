@@ -74,6 +74,41 @@ check_config() {
     mkdir -p "$HOME/.cache/opencode" 2>/dev/null || true
 }
 
+# Function to run OpenCode authentication
+run_auth() {
+    print_info "Running OpenCode authentication..."
+    
+    # Ensure OpenCode directories exist
+    mkdir -p "$HOME/.local/share/opencode" 2>/dev/null || true
+    mkdir -p "$HOME/.cache/opencode" 2>/dev/null || true
+    mkdir -p "$HOME/.config/opencode" 2>/dev/null || true
+    
+    # Build volume mount arguments for auth
+    local volume_args=""
+    
+    # OpenCode data directory (read-write for auth storage)
+    volume_args="$volume_args -v $HOME/.local/share/opencode:/home/coder/.local/share/opencode"
+    
+    # OpenCode cache directory
+    volume_args="$volume_args -v $HOME/.cache/opencode:/home/coder/.cache/opencode"
+    
+    # OpenCode config directory (for writing opencode.json if needed)
+    volume_args="$volume_args -v $HOME/.config/opencode:/home/coder/.config/opencode"
+    
+    # Run OpenCode auth login in Docker
+    docker run -it --rm \
+        --name "opencode-auth-$$" \
+        --network host \
+        -e HOST_UID="$(id -u)" \
+        -e HOST_GID="$(id -g)" \
+        -e TERM="${TERM:-xterm-256color}" \
+        $volume_args \
+        "$IMAGE_NAME" \
+        opencode auth login
+    
+    print_success "Authentication complete! Your credentials are saved in $HOME/.local/share/opencode"
+}
+
 # Function to run OpenCode
 run_opencode() {
     local project_dir="${1:-$(pwd)}"
@@ -171,12 +206,14 @@ Usage: $0 [COMMAND] [OPTIONS]
 
 Commands:
     run [DIR]       Run OpenCode in Docker (default: current directory)
+    auth            Run OpenCode authentication (opencode auth login)
     build           Build the Docker image
     update          Update OpenCode to the latest version
     version         Show OpenCode version in the container
     help            Show this help message
 
 Examples:
+    $0 auth                         # Authenticate with your LLM provider
     $0 run                          # Run in current directory
     $0 run /path/to/project         # Run in specific directory
     $0 build                        # Build the Docker image
@@ -211,6 +248,9 @@ main() {
         run)
             check_config
             run_opencode "$@"
+            ;;
+        auth)
+            run_auth
             ;;
         build)
             build_image

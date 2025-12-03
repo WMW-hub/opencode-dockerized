@@ -7,6 +7,7 @@ _opencode_dockerized() {
     local -a commands
     commands=(
         'run:Run OpenCode in Docker (default: current directory)'
+        'auth:Run OpenCode authentication (opencode auth login)'
         'build:Build the Docker image'
         'update:Update OpenCode to the latest version'
         'version:Show OpenCode version in the container'

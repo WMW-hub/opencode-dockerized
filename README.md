@@ -11,6 +11,8 @@ Run OpenCode in a secure, isolated Docker container with controlled access to yo
 - [Configuration](#-configuration)
 - [Portability & Sharing](#-portability--sharing)
 - [Advanced Usage](#-advanced-usage)
+- [Performance Optimizations](#-performance-optimizations)
+- [Testcontainers Support](#-testcontainers-support)
 - [Troubleshooting](#-troubleshooting)
 - [File Reference](#-file-reference)
 
@@ -25,15 +27,11 @@ Run OpenCode in a secure, isolated Docker container with controlled access to yo
 ## 📋 Prerequisites
 
 1. **Docker** installed and running
-2. **OpenCode configuration** on your host machine (optional):
-   - `~/.config/opencode/opencode.json` - OpenCode settings
-   - `~/.local/share/opencode/` - Authentication, logs, sessions, and project data
-   - `~/.config/opencode/agent/` - Custom agents
-3. **Optional configuration files**:
+2. **Optional configuration files** (if you have them):
    - `~/.gradle/gradle.properties` - Gradle configuration
    - `~/.npmrc` - NPM configuration
 
-If you don't have OpenCode configured yet, you can run `opencode auth login` inside the container after first launch.
+**No local OpenCode installation required!** Authentication and all OpenCode operations run through Docker.
 
 ## 🚀 Quick Start
 
@@ -49,11 +47,30 @@ cd /path/to/opencode-dockerized
 # 3. Build the Docker image
 ./opencode-dockerized.sh build
 
-# 4. Run OpenCode in your project
+# 4. Authenticate with your LLM provider (no local OpenCode needed!)
+./opencode-dockerized.sh auth
+
+# 5. Run OpenCode in your project
 ./opencode-dockerized.sh run
 # or
 ./opencode-dockerized.sh run /path/to/your/project
 ```
+
+### Authentication
+
+**No local OpenCode installation required!** You can authenticate directly through Docker:
+
+```bash
+# Authenticate with your LLM provider (Anthropic, OpenAI, etc.)
+./opencode-dockerized.sh auth
+
+# This will:
+# - Run 'opencode auth login' inside the container
+# - Save credentials to ~/.local/share/opencode on your host
+# - Make authentication available to all future OpenCode runs
+```
+
+Your authentication is stored on the host machine and persists across container restarts.
 
 ### Daily Usage
 
@@ -126,6 +143,7 @@ After installation, you'll get:
 
 ```bash
 ./opencode-dockerized.sh build          # Build Docker image
+./opencode-dockerized.sh auth           # Authenticate with LLM provider
 ./opencode-dockerized.sh run [DIR]      # Run OpenCode (default: current dir)
 ./opencode-dockerized.sh update         # Update OpenCode version
 ./opencode-dockerized.sh version        # Show version
@@ -368,11 +386,13 @@ docker build --no-cache -t opencode-dockerized:latest .
 
 ### How It Works
 
-1. **Base Image**: Uses Node.js 20 slim for minimal footprint
-2. **OpenCode Installation**: Installs latest OpenCode via npm
-3. **User Management**: Creates non-root `coder` user
-4. **Entrypoint**: Adjusts UID/GID to match host user
-5. **Volume Mounting**: Mounts only necessary directories with appropriate permissions
+1. **Base Image**: Uses Debian Bookworm slim for minimal footprint
+2. **Docker CLI Only**: Installs only Docker CLI (uses host's Docker daemon via socket)
+3. **Development Tools**: Includes Node.js (via NVM), Java (via SDKMAN), Git, and essential tools
+4. **OpenCode Installation**: Installs latest OpenCode via npm
+5. **User Management**: Creates non-root `coder` user with UID/GID matching
+6. **Entrypoint**: Adjusts permissions and switches to non-root user
+7. **Volume Mounting**: Mounts only necessary directories with appropriate permissions
 
 ### The Blast Radius Concept
 
@@ -391,10 +411,70 @@ This significantly reduces risk while maintaining full functionality.
 
 ## ⚠️ Important Notes
 
-1. **Network Access**: Container uses host network mode by default for convenience.
-2. **Configuration Updates**: Config files are read-only. Modify on host and restart container.
-3. **Persistent Data**: Only files in mounted project directory persist.
-4. **Not a Replacement for Caution**: Review OpenCode's actions, especially with `--allow-all-tools`.
+1. **Docker Socket**: Container uses host's Docker daemon via mounted socket (no privileged mode needed)
+2. **Network Access**: Container uses host network mode by default for convenience
+3. **Configuration Updates**: Config files are read-only. Modify on host and restart container
+4. **Persistent Data**: Only files in mounted project directory persist
+5. **Not a Replacement for Caution**: Review OpenCode's actions, especially with `--allow-all-tools`
+
+## 🚀 Performance Optimizations
+
+This setup is optimized for minimal overhead:
+
+- **Docker CLI Only**: Only installs Docker CLI (not the full daemon), saving ~200MB
+- **Host Docker Daemon**: Uses your existing Docker daemon via socket mounting
+- **No Privileged Mode**: No need for `--privileged` flag or Docker-in-Docker
+- **Shared Resources**: Shares Docker images/containers with host (no duplication)
+- **Fast Startup**: No daemon initialization delay
+
+## 🧪 Testcontainers Support
+
+**Full Testcontainers support is included!** Your integration tests can spin up Docker containers.
+
+### How It Works
+
+When you run tests with Testcontainers (Java, Node.js, Python, etc.):
+
+1. Testcontainers library detects the Docker socket at `/var/run/docker.sock`
+2. Containers are created on your **host's Docker daemon** (not inside the OpenCode container)
+3. Test containers appear in `docker ps` on your host machine
+4. Containers are automatically cleaned up after tests complete
+
+### Example Use Cases
+
+```java
+// Java/Spring Boot with Testcontainers
+@Container
+static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine");
+
+@Container
+static GenericContainer<?> redis = new GenericContainer<>("redis:7-alpine")
+    .withExposedPorts(6379);
+```
+
+```javascript
+// Node.js with Testcontainers
+const { GenericContainer } = require("testcontainers");
+
+const container = await new GenericContainer("postgres:15-alpine")
+  .withExposedPorts(5432)
+  .start();
+```
+
+### Benefits
+
+✅ **Works out of the box** - No special configuration needed  
+✅ **Fast performance** - Containers run directly on host (no nested virtualization)  
+✅ **Shared images** - Downloaded images are shared with your host Docker  
+✅ **Easy debugging** - Use `docker ps` and `docker logs` on your host to inspect test containers  
+✅ **Network access** - Test containers can communicate with your application  
+
+### Important Notes
+
+- Test containers run on the **host**, not inside the OpenCode container
+- Cleanup happens automatically via Testcontainers' cleanup hooks
+- Volume mounts in test containers use host paths, not container paths
+- Network modes (bridge, host) work as expected
 
 ---
 

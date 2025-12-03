@@ -1,5 +1,5 @@
 # Use Debian slim as lightweight Linux base
-# Note: For full Docker-in-Docker, this image needs --privileged flag
+# Note: We only install Docker CLI to use host's Docker daemon via mounted socket
 FROM debian:bookworm-slim
 
 # Install base dependencies
@@ -18,7 +18,8 @@ RUN apt-get update && apt-get install -y \
     software-properties-common \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Docker (Docker-in-Docker)
+# Install Docker CLI only (uses host Docker daemon via mounted socket)
+# We don't need docker-ce (daemon) or containerd.io since we use the host's Docker
 RUN install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
     chmod a+r /etc/apt/keyrings/docker.asc && \
@@ -26,13 +27,14 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
     $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
     tee /etc/apt/sources.list.d/docker.list > /dev/null && \
     apt-get update && \
-    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin && \
+    apt-get install -y docker-ce-cli docker-buildx-plugin docker-compose-plugin && \
     rm -rf /var/lib/apt/lists/*
 
-# Create a non-root user
+# Create non-root user
+# Note: Docker socket group membership is handled dynamically in entrypoint.sh
+# based on the host's actual Docker socket GID
 RUN useradd -m -s /bin/bash -u 1000 coder && \
-    echo "coder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
-    usermod -aG docker coder
+    echo "coder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # Install SDKMAN as coder user
 USER coder
