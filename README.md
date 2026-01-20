@@ -206,15 +206,16 @@ TERM=xterm-256color
 | `~/.gradle/gradle.properties` | `/home/coder/.gradle/gradle.properties` | read-only | Gradle config |
 | `~/.npmrc` | `/home/coder/.npmrc` | read-only | NPM config |
 
-### Custom Configuration (Optional)
 
-**Advanced Users:** You can configure custom volume mounts and environment variables to be automatically mounted in the container. This is useful for:
+### Custom Global Configuration (Optional)
 
+**Advanced Users:** You can configure custom volume mounts and environment variables to be automatically mounted in the container for all projects. This is useful for:
+
+- **SSH agent forwarding**: Enable `setting.ssh_agent_support=true` for secure git over SSH (recommended)
 - **Global git configuration**: Mount `~/.gitconfig` and global gitignore
-- **SSH authentication**: Mount `~/.ssh` for git commit signing and key access
-- **Environment variables**: Pass SSH agent socket, API keys, and other credentials
+- **Environment variables**: Pass API keys and other credentials
 
-#### Getting Started with Custom Config
+#### Getting Started with Custom Global Config
 
 ```bash
 # During setup, you'll be prompted to add custom mounts and env vars
@@ -229,48 +230,36 @@ TERM=xterm-256color
 Configuration is stored in `~/.config/opencode-dockerized/config` (INI format):
 
 ```ini
+# Settings (built-in features)
+# Format: setting.<name>=<value>
+setting.ssh_agent_support=true
+
 # Custom volume mounts (read-only by default)
 # Format: mount.<name>=<host_path>:<container_path>[:rw]
 mount.gitconfig=~/.gitconfig:/home/coder/.gitconfig
-mount.gitignore_global=~/.config/git/gitignore_global:/home/coder/.config/git/gitignore_global
-mount.ssh=~/.ssh:/home/coder/.ssh
 
 # Environment variables to pass from host to container
 # Format: env.<name>=<VARIABLE_NAME>
-env.ssh_auth_sock=SSH_AUTH_SOCK
-env.ssh_client=SSH_CLIENT
-env.ssh_connection=SSH_CONNECTION
-env.ssh_tty=SSH_TTY
 env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
 env.context7=CONTEXT7_API_KEY
 ```
 
 #### Examples
 
-**Example 1: Git configuration with SSH**
+**Example 1: Git configuration with SSH agent forwarding (Recommended)**
 ```ini
+setting.ssh_agent_support=true
 mount.gitconfig=~/.gitconfig:/home/coder/.gitconfig
-mount.gitignore_global=~/.config/git/gitignore_global:/home/coder/.config/git/gitignore_global
-mount.ssh=~/.ssh:/home/coder/.ssh
-env.ssh_auth_sock=SSH_AUTH_SOCK
 ```
 
-**Example 2: SSH agent forwarding**
-```ini
-mount.ssh=~/.ssh:/home/coder/.ssh
-env.ssh_auth_sock=SSH_AUTH_SOCK
-env.ssh_client=SSH_CLIENT
-env.ssh_connection=SSH_CONNECTION
-env.ssh_tty=SSH_TTY
-```
-
-**Example 3: API keys and credentials**
+**Example 2: API keys and credentials**
 ```ini
 env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
 env.context7=CONTEXT7_API_KEY
 ```
 
 **Note:** 
+- **SSH Agent Support**: Use `setting.ssh_agent_support=true` instead of manually mounting `~/.ssh` or passing `SSH_AUTH_SOCK`
 - Mounts are **read-only by default** (append `:rw` for read-write)
 - Paths use `~` which is expanded to your home directory at runtime
 - Environment variables must be set in your host environment to be passed
