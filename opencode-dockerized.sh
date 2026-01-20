@@ -8,6 +8,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE_NAME="opencode-dockerized:latest"
 
+# Source the shared config module
+source "$SCRIPT_DIR/config-lib.sh"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -83,6 +86,9 @@ run_auth() {
     mkdir -p "$HOME/.cache/opencode" 2>/dev/null || true
     mkdir -p "$HOME/.config/opencode" 2>/dev/null || true
     
+    # Parse custom config
+    parse_config
+    
     # Build volume mount arguments for auth
     local volume_args=""
     
@@ -95,6 +101,10 @@ run_auth() {
     # OpenCode config directory (for writing opencode.json if needed)
     volume_args="$volume_args -v $HOME/.config/opencode:/home/coder/.config/opencode"
     
+    # Custom mounts and env vars from config
+    local custom_mount_args=$(build_mount_args)
+    local custom_env_args=$(build_env_args)
+    
     # Run OpenCode auth login in Docker
     docker run -it --rm \
         --name "opencode-auth-$$" \
@@ -103,6 +113,8 @@ run_auth() {
         -e HOST_GID="$(id -g)" \
         -e TERM="${TERM:-xterm-256color}" \
         $volume_args \
+        $custom_mount_args \
+        $custom_env_args \
         "$IMAGE_NAME" \
         opencode auth login
     
@@ -125,6 +137,9 @@ run_opencode() {
     print_info "Starting OpenCode in Docker..."
     print_info "Project directory: $project_dir"
     print_info "Container name: $container_name"
+    
+    # Parse custom config early
+    parse_config
     
     # Build volume mount arguments - only mount files that exist
     local volume_args="-v $project_dir:/workspace"
@@ -167,6 +182,10 @@ run_opencode() {
         volume_args="$volume_args -v $HOME/.npmrc:/home/coder/.npmrc:ro"
     fi
     
+    # Custom mounts and env vars from config
+    local custom_mount_args=$(build_mount_args)
+    local custom_env_args=$(build_env_args)
+    
     # Note: Each run gets a unique container name, so no cleanup needed
     # The --rm flag ensures automatic cleanup when the container exits
     
@@ -180,6 +199,8 @@ run_opencode() {
         -e HOST_GID="$(id -g)" \
         -e TERM="${TERM:-xterm-256color}" \
         $volume_args \
+        $custom_mount_args \
+        $custom_env_args \
         "$IMAGE_NAME" \
         opencode
 }

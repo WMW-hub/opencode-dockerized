@@ -25,6 +25,15 @@ bash -n script.sh                       # Test shell script syntax
 - Check prerequisites before operations (e.g., `check_docker` before Docker commands)
 - Redirect stderr for expected failures: `2>/dev/null || true`
 
+### Shared Module (config-lib.sh)
+- Provides reusable functions sourced by multiple scripts
+- Define color codes with defaults: `: "${RED:='\033[0;31m'}"`
+- Check if caller has logging functions before using them: `type print_info >/dev/null 2>&1`
+- Use module logging functions with fallbacks for standalone use
+- Global arrays for state: `declare -a CUSTOM_MOUNTS=()`
+- Document all exported functions with comments
+- INI-style config format: `key.name=value` (not YAML or JSON to avoid dependencies)
+
 ### Dockerfile
 - Use specific versions: `debian:bookworm-slim` not `latest`
 - Install Docker CLI only (not daemon): `docker-ce-cli` not `docker-ce`
@@ -36,3 +45,6 @@ bash -n script.sh                       # Test shell script syntax
 - Mount configs read-only (`:ro`), never commit `.env` or `auth.json`
 - Use host Docker socket (no privileged mode or Docker-in-Docker)
 - Container uses non-root user with host UID/GID matching
+- Allow users to mount custom paths read-only by default
+- Only pass environment variables explicitly listed in config
+

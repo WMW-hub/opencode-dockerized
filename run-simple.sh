@@ -8,6 +8,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE_NAME="opencode-dockerized:latest"
 
+# Source the shared config module
+source "$SCRIPT_DIR/config-lib.sh"
+
 # Get project directory (default to current directory)
 PROJECT_DIR="${1:-$(pwd)}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
@@ -17,6 +20,9 @@ if ! docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^${IMAGE_NAME}
     echo "Building Docker image..."
     docker build -t "$IMAGE_NAME" "$SCRIPT_DIR"
 fi
+
+# Parse custom config
+parse_config
 
 # Build volume mount arguments - only mount files that exist
 VOLUME_ARGS="-v $PROJECT_DIR:/workspace"
@@ -48,6 +54,10 @@ VOLUME_ARGS="-v $PROJECT_DIR:/workspace"
 [ -f "$HOME/.npmrc" ] && \
     VOLUME_ARGS="$VOLUME_ARGS -v $HOME/.npmrc:/home/coder/.npmrc:ro"
 
+# Custom mounts and env vars from config
+CUSTOM_MOUNT_ARGS=$(build_mount_args)
+CUSTOM_ENV_ARGS=$(build_env_args)
+
 # Run OpenCode in Docker
 docker run -it --rm \
     --name opencode-dockerized \
@@ -57,5 +67,7 @@ docker run -it --rm \
     -e HOST_GID="$(id -g)" \
     -e TERM="${TERM:-xterm-256color}" \
     $VOLUME_ARGS \
+    $CUSTOM_MOUNT_ARGS \
+    $CUSTOM_ENV_ARGS \
     "$IMAGE_NAME" \
     opencode

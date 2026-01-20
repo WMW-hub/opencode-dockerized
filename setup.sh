@@ -5,6 +5,10 @@
 
 set -e
 
+# Source the shared config module
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/config-lib.sh"
+
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
@@ -49,6 +53,49 @@ ensure_dir "$HOME/.mcp-auth"
 
 # Check/create OpenCode config files
 ensure_file "$HOME/.config/opencode/opencode.json" '{}'
+
+# ============================================
+# Custom Configuration Setup
+# ============================================
+
+prompt_config_mode
+
+# Handle config setup based on mode
+if [ "$CONFIG_MODE" = "skip" ]; then
+    echo ""
+    echo "Skipping custom configuration setup."
+    echo "You can run setup.sh again later to configure custom mounts and environment variables."
+elif [ "$CONFIG_MODE" = "append" ] || [ "$CONFIG_MODE" = "overwrite" ]; then
+    # Load existing config if appending
+    [ "$CONFIG_MODE" = "append" ] && load_config
+    
+    # Interactive prompts
+    prompt_custom_mounts
+    prompt_env_vars
+    
+    # Save configuration
+    save_config
+    print_config
+elif [ "$CONFIG_MODE" = "new" ]; then
+    # New configuration
+    read -p "Would you like to configure custom mounts and environment variables now? (y/N): " -r setup_custom
+    
+    if [[ "$setup_custom" =~ ^[Yy]$ ]]; then
+        prompt_custom_mounts
+        prompt_env_vars
+        
+        if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ]; then
+            save_config
+            print_config
+        else
+            config_info "No custom configuration added."
+        fi
+    else
+        # Create empty config for future use
+        init_config_file
+        config_info "You can run setup.sh again later to configure custom mounts and environment variables."
+    fi
+fi
 
 echo ""
 echo -e "${GREEN}Setup complete!${NC}"

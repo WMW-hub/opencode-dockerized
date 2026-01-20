@@ -206,6 +206,76 @@ TERM=xterm-256color
 | `~/.gradle/gradle.properties` | `/home/coder/.gradle/gradle.properties` | read-only | Gradle config |
 | `~/.npmrc` | `/home/coder/.npmrc` | read-only | NPM config |
 
+### Custom Configuration (Optional)
+
+**Advanced Users:** You can configure custom volume mounts and environment variables to be automatically mounted in the container. This is useful for:
+
+- **Global git configuration**: Mount `~/.gitconfig` and global gitignore
+- **SSH authentication**: Mount `~/.ssh` for git commit signing and key access
+- **Environment variables**: Pass SSH agent socket, API keys, and other credentials
+
+#### Getting Started with Custom Config
+
+```bash
+# During setup, you'll be prompted to add custom mounts and env vars
+./setup.sh
+
+# Or manually edit the config file
+~/.config/opencode-dockerized/config
+```
+
+#### Config Format
+
+Configuration is stored in `~/.config/opencode-dockerized/config` (INI format):
+
+```ini
+# Custom volume mounts (read-only by default)
+# Format: mount.<name>=<host_path>:<container_path>[:rw]
+mount.gitconfig=~/.gitconfig:/home/coder/.gitconfig
+mount.gitignore_global=~/.config/git/gitignore_global:/home/coder/.config/git/gitignore_global
+mount.ssh=~/.ssh:/home/coder/.ssh
+
+# Environment variables to pass from host to container
+# Format: env.<name>=<VARIABLE_NAME>
+env.ssh_auth_sock=SSH_AUTH_SOCK
+env.ssh_client=SSH_CLIENT
+env.ssh_connection=SSH_CONNECTION
+env.ssh_tty=SSH_TTY
+env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
+env.context7=CONTEXT7_API_KEY
+```
+
+#### Examples
+
+**Example 1: Git configuration with SSH**
+```ini
+mount.gitconfig=~/.gitconfig:/home/coder/.gitconfig
+mount.gitignore_global=~/.config/git/gitignore_global:/home/coder/.config/git/gitignore_global
+mount.ssh=~/.ssh:/home/coder/.ssh
+env.ssh_auth_sock=SSH_AUTH_SOCK
+```
+
+**Example 2: SSH agent forwarding**
+```ini
+mount.ssh=~/.ssh:/home/coder/.ssh
+env.ssh_auth_sock=SSH_AUTH_SOCK
+env.ssh_client=SSH_CLIENT
+env.ssh_connection=SSH_CONNECTION
+env.ssh_tty=SSH_TTY
+```
+
+**Example 3: API keys and credentials**
+```ini
+env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
+env.context7=CONTEXT7_API_KEY
+```
+
+**Note:** 
+- Mounts are **read-only by default** (append `:rw` for read-write)
+- Paths use `~` which is expanded to your home directory at runtime
+- Environment variables must be set in your host environment to be passed
+- Re-run `./setup.sh` anytime to update your custom configuration
+
 ## 🌍 Portability & Sharing
 
 **This setup is fully portable!** It uses `$HOME` instead of hardcoded paths and works across different users and systems.
@@ -372,7 +442,11 @@ docker build --no-cache -t opencode-dockerized:latest .
 
 - **`opencode-dockerized.sh`** - Main wrapper with all features (build, run, update, version, help)
 - **`run-simple.sh`** - Simplified runner script
-- **`setup.sh`** - First-time initialization (creates config directories)
+- **`setup.sh`** - First-time initialization (creates config directories, prompts for custom config)
+
+### Shared Modules
+
+- **`config-lib.sh`** - Shared configuration library (sourced by other scripts, handles mounts and env vars)
 
 ### Shell Completion
 
@@ -382,6 +456,7 @@ docker build --no-cache -t opencode-dockerized:latest .
 ### Configuration
 
 - **`.env.example`** - Template for environment variables
+- **`config.example`** - Example custom configuration file
 - **`.gitignore`** - Excludes sensitive files from Git
 
 ### How It Works
