@@ -23,6 +23,8 @@ fi
 
 # Parse custom config
 parse_config
+build_mount_args
+build_env_args
 
 # Build volume mount arguments - only mount files that exist
 VOLUME_ARGS="-v $PROJECT_DIR:/workspace"
@@ -55,8 +57,7 @@ VOLUME_ARGS="-v $PROJECT_DIR:/workspace"
     VOLUME_ARGS="$VOLUME_ARGS -v $HOME/.npmrc:/home/coder/.npmrc:ro"
 
 # Custom mounts and env vars from config
-CUSTOM_MOUNT_ARGS=$(build_mount_args)
-CUSTOM_ENV_ARGS=$(build_env_args)
+# (Already built by build_mount_args and build_env_args above)
 
 # Run OpenCode in Docker
 docker run -it --rm \
@@ -67,7 +68,7 @@ docker run -it --rm \
     -e HOST_GID="$(id -g)" \
     -e TERM="${TERM:-xterm-256color}" \
     $VOLUME_ARGS \
-    $CUSTOM_MOUNT_ARGS \
-    $CUSTOM_ENV_ARGS \
+    "${DOCKER_MOUNT_ARGS[@]}" \
+    "${DOCKER_ENV_ARGS[@]}" \
     "$IMAGE_NAME" \
     opencode

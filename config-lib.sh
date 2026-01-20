@@ -65,6 +65,8 @@ config_error() {
 
 declare -a CUSTOM_MOUNTS=()      # Array of "host_path:container_path[:rw]"
 declare -a CUSTOM_ENV_VARS=()    # Array of "VARIABLE_NAME"
+declare -a DOCKER_MOUNT_ARGS=()  # Array of docker -v arguments (populated by build_mount_args)
+declare -a DOCKER_ENV_ARGS=()    # Array of docker -e arguments (populated by build_env_args)
 
 # ============================================
 # CONFIG FILE OPERATIONS
@@ -171,9 +173,9 @@ parse_config() {
 }
 
 # Build docker volume mount arguments from CUSTOM_MOUNTS array
-# Returns string like: "-v /path:/path -v /path2:/path2"
+# Populates DOCKER_MOUNT_ARGS array with -v arguments
 build_mount_args() {
-    local mount_args=""
+    DOCKER_MOUNT_ARGS=()
     
     for mount in "${CUSTOM_MOUNTS[@]}"; do
         # Expand ~ to home directory
@@ -188,22 +190,20 @@ build_mount_args() {
         # Validate mode is either not set or "rw"
         if [ "$mode" = "$container_path" ]; then
             # No mode specified, default to read-only
-            mount_args="$mount_args -v \"$host_path:$container_path:ro\""
+            DOCKER_MOUNT_ARGS+=(-v "$host_path:$container_path:ro")
         elif [ "$mode" = "rw" ]; then
-            mount_args="$mount_args -v \"$host_path:$container_path:rw\""
+            DOCKER_MOUNT_ARGS+=(-v "$host_path:$container_path:rw")
         else
             # Mode was specified, use it as-is
-            mount_args="$mount_args -v \"$host_path:$container_path:$mode\""
+            DOCKER_MOUNT_ARGS+=(-v "$host_path:$container_path:$mode")
         fi
     done
-    
-    echo "$mount_args"
 }
 
 # Build docker environment variable arguments from CUSTOM_ENV_VARS array
-# Returns string like: "-e VAR1=$VAR1 -e VAR2=$VAR2"
+# Populates DOCKER_ENV_ARGS array with -e arguments
 build_env_args() {
-    local env_args=""
+    DOCKER_ENV_ARGS=()
     
     for var_name in "${CUSTOM_ENV_VARS[@]}"; do
         # Get the value from the current environment
@@ -211,13 +211,11 @@ build_env_args() {
         
         # Only add if the variable is set in the environment
         if [ -n "$var_value" ]; then
-            env_args="$env_args -e \"$var_name=$var_value\""
+            DOCKER_ENV_ARGS+=(-e "$var_name=$var_value")
         else
             config_warning "Environment variable '$var_name' not set in host environment (skipping)"
         fi
     done
-    
-    echo "$env_args"
 }
 
 # ============================================
