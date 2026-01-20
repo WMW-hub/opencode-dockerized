@@ -24,15 +24,26 @@ ensure_dir() {
     fi
 }
 
-# Function to create file if it doesn't exist
-ensure_file() {
-    if [ ! -f "$1" ]; then
-        echo -e "${YELLOW}Creating file: $1${NC}"
-        mkdir -p "$(dirname "$1")"
-        echo "$2" > "$1"
-    else
-        echo -e "${GREEN}✓${NC} File exists: $1"
-    fi
+# Function to ensure at least one of the files exists
+# Creates the first file with default content if none exist
+ensure_any_file() {
+    local default_content="$1"
+    shift
+    local files=("$@")
+    
+    # Check if any file already exists
+    for file in "${files[@]}"; do
+        if [ -f "$file" ]; then
+            echo -e "${GREEN}✓${NC} Config file exists: $file"
+            return 0
+        fi
+    done
+    
+    # None exist, create the first one
+    local first_file="${files[0]}"
+    echo -e "${YELLOW}Creating file: $first_file${NC}"
+    mkdir -p "$(dirname "$first_file")"
+    echo "$default_content" > "$first_file"
 }
 
 echo "Checking OpenCode configuration..."
@@ -48,7 +59,7 @@ ensure_dir "$HOME/.cache/opencode"
 ensure_dir "$HOME/.mcp-auth"
 
 # Check/create OpenCode config files
-ensure_file "$HOME/.config/opencode/opencode.json" '{}'
+ensure_any_file '{}' "$HOME/.config/opencode/opencode.json" "$HOME/.config/opencode/opencode.jsonc"
 
 echo ""
 echo -e "${GREEN}Setup complete!${NC}"

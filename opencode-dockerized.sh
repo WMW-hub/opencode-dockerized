@@ -52,8 +52,8 @@ build_image() {
 check_config() {
     local missing_files=()
     
-    if [ ! -f "$HOME/.config/opencode/opencode.json" ]; then
-        missing_files+=("$HOME/.config/opencode/opencode.json")
+    if [ ! -f "$HOME/.config/opencode/opencode.json" ] && [ ! -f "$HOME/.config/opencode/opencode.jsonc" ]; then
+        missing_files+=("$HOME/.config/opencode/opencode.json (or opencode.jsonc)")
     fi
     
     if [ ! -d "$HOME/.local/share/opencode" ]; then

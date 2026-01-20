@@ -324,7 +324,7 @@ chmod +x opencode-dockerized.sh run-simple.sh setup.sh entrypoint.sh
 
 # Or manually create
 mkdir -p ~/.config/opencode ~/.local/share/opencode
-echo '{}' > ~/.config/opencode/opencode.json
+echo '{}' > ~/.config/opencode/opencode.json  # or opencode.jsonc
 ```
 
 ### Permission Issues with Files
