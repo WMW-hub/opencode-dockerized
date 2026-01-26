@@ -2,7 +2,7 @@
 # Note: We only install Docker CLI to use host's Docker daemon via mounted socket
 FROM debian:bookworm-slim
 
-# Install base dependencies
+# Install base dependencies and useful CLI tools for coding agents
 RUN apt-get update && apt-get install -y \
     git \
     curl \
@@ -16,6 +16,12 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     apt-transport-https \
     software-properties-common \
+    ripgrep \
+    fd-find \
+    jq \
+    tree \
+    less \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Docker CLI only (uses host Docker daemon via mounted socket)
