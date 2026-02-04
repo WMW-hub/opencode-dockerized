@@ -45,6 +45,7 @@ ensure_dir "$HOME/.config/opencode/plugin"
 ensure_dir "$HOME/.config/opencode/command"
 ensure_dir "$HOME/.local/share/opencode"
 ensure_dir "$HOME/.cache/opencode"
+ensure_dir "$HOME/.cache/oh-my-opencode"
 ensure_dir "$HOME/.mcp-auth"
 
 # Check/create OpenCode config files

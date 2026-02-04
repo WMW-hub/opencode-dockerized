@@ -72,6 +72,7 @@ check_config() {
     # According to docs: https://opencode.ai/docs/troubleshooting/#storage
     mkdir -p "$HOME/.local/share/opencode" 2>/dev/null || true
     mkdir -p "$HOME/.cache/opencode" 2>/dev/null || true
+    mkdir -p "$HOME/.cache/oh-my-opencode" 2>/dev/null || true
 }
 
 # Function to run OpenCode authentication
@@ -150,6 +151,11 @@ run_opencode() {
     # See: https://opencode.ai/docs/troubleshooting/#ai_apicallerror-and-provider-package-issues
     if [ -d "$HOME/.cache/opencode" ]; then
         volume_args="$volume_args -v $HOME/.cache/opencode:/home/coder/.cache/opencode"
+    fi
+
+    # Oh My OpenCode cache directory
+    if [ -d "$HOME/.cache/oh-my-opencode" ]; then
+        volume_args="$volume_args -v $HOME/.cache/oh-my-opencode:/home/coder/.cache/oh-my-opencode"
     fi
     
     # MCP authentication directory (optional)

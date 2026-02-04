@@ -22,6 +22,8 @@ RUN apt-get update && apt-get install -y \
     tree \
     less \
     procps \
+    tmux \
+    lsof \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Docker CLI only (uses host Docker daemon via mounted socket)
@@ -62,9 +64,19 @@ RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | b
 # See: https://docs.astral.sh/uv/getting-started/installation/
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Add nvm, node, sdkman, and uv to PATH
+# Install ast-grep for AST-aware code search/replace
+# See: https://ast-grep.github.io/
+RUN curl -fsSL https://raw.githubusercontent.com/ast-grep/ast-grep/main/install.sh | bash -s -- --prefix /home/coder/.local
+
+# Install Bun (fast JavaScript runtime and package manager)
+# Required by oh-my-opencode for optimal performance
+# See: https://bun.sh/
+RUN curl -fsSL https://bun.sh/install | bash
+ENV BUN_INSTALL="/home/coder/.bun"
+
+# Add nvm, node, sdkman, uv, bun, and ast-grep to PATH
 # Note: Node version path will be determined at runtime by nvm
-ENV PATH="$NVM_DIR/versions/node/default/bin:/home/coder/.local/bin:/home/coder/.sdkman/candidates/java/current/bin:$PATH"
+ENV PATH="$BUN_INSTALL/bin:$NVM_DIR/versions/node/default/bin:/home/coder/.local/bin:/home/coder/.sdkman/candidates/java/current/bin:$PATH"
 ENV JAVA_HOME="/home/coder/.sdkman/candidates/java/current"
 
 # Install OpenCode globally
@@ -79,6 +91,7 @@ USER root
 RUN mkdir -p /home/coder/.config/opencode && \
     mkdir -p /home/coder/.local/share/opencode && \
     mkdir -p /home/coder/.cache/opencode && \
+    mkdir -p /home/coder/.cache/oh-my-opencode && \
     mkdir -p /home/coder/.gradle && \
     mkdir -p /home/coder/.npm && \
     mkdir -p /home/coder/.m2 && \

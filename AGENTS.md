@@ -2,34 +2,43 @@
 
 ## Project Overview
 
-Shell script-based Docker wrapper for running OpenCode (AI coding assistant) in secure, isolated containers with controlled project access. Provides a sandboxed environment limiting OpenCode's blast radius to only the mounted project directory.
+Shell script-based Docker wrapper for running OpenCode (AI coding assistant) in secure, isolated containers. Provides a sandboxed environment limiting OpenCode's blast radius to only the mounted project directory. Includes full support for [Oh My OpenCode](https://github.com/code-yeongyu/oh-my-opencode) plugin.
 
 **Key Components:**
 - `opencode-dockerized.sh` - Main wrapper script with build, run, auth, update commands
-- `Dockerfile` - Container image with Node.js, Java, Python, Docker CLI
+- `Dockerfile` - Container image (Debian + Node.js/NVM + Java/SDKMAN + Bun + ast-grep + OpenCode)
 - `entrypoint.sh` - UID/GID mapping for host file permissions
 - `setup.sh` - First-time initialization for config directories
+- `run-simple.sh` - Simplified alternative runner script
 - Shell completion scripts for Bash and Zsh
+
+**Container Tools:**
+- Node.js (via NVM), Java 21 (via SDKMAN), Python tooling (via uv)
+- Bun, ast-grep, tmux, lsof (for oh-my-opencode)
+- Docker CLI, ripgrep, fd-find, jq, git
 
 ## Build/Test/Lint Commands
 
 ```bash
 # Core Operations
 ./opencode-dockerized.sh build          # Build Docker image
-./opencode-dockerized.sh auth           # Authenticate OpenCode (no local install needed)
+./opencode-dockerized.sh auth           # Authenticate OpenCode
 ./opencode-dockerized.sh run [DIR]      # Run OpenCode (default: current dir)
 ./opencode-dockerized.sh update         # Update OpenCode to latest version
 ./opencode-dockerized.sh version        # Show OpenCode version in container
 ./opencode-dockerized.sh help           # Show help message
 
 # Setup
-./setup.sh                              # Initialize config directories (~/.config/opencode, etc.)
+./setup.sh                              # Initialize config directories
 chmod +x *.sh                           # Fix script permissions if needed
 
+# Alternative Runner
+./run-simple.sh [DIR]                   # Simpler runner without all features
+
 # Testing & Validation
-bash -n script.sh                       # Syntax check a shell script (static analysis)
+bash -n script.sh                       # Syntax check a shell script
 bash -n *.sh                            # Syntax check all shell scripts
-shellcheck script.sh                    # Lint shell script (if shellcheck installed)
+shellcheck script.sh                    # Lint shell script (if installed)
 
 # Docker Operations
 docker build -t opencode-dockerized:latest .                    # Manual build
@@ -61,10 +70,10 @@ set -e  # Exit on first error
 **Color Output Pattern:**
 ```bash
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
-print_error() { echo -e "${RED}x${NC} $1"; }
-print_success() { echo -e "${GREEN}v${NC} $1"; }
-print_warning() { echo -e "${YELLOW}!${NC} $1"; }
-print_info() { echo -e "${BLUE}i${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
+print_info() { echo -e "${BLUE}ℹ${NC} $1"; }
 ```
 
 **Error Handling:**
@@ -74,9 +83,9 @@ print_info() { echo -e "${BLUE}i${NC} $1"; }
 
 **Conditionals:**
 ```bash
-[ -f "$file" ] && echo "File exists"      # File check
-[ -d "$dir" ] && echo "Dir exists"        # Directory check
-[ -S "$socket" ] && echo "Socket exists"  # Socket check
+[ -f "$file" ] && volume_args="$volume_args -v $file:/path:ro"  # File check
+[ -d "$dir" ] && volume_args="$volume_args -v $dir:/path"       # Directory check
+[ -S "$socket" ] && echo "Socket exists"                         # Socket check
 
 if ! docker info >/dev/null 2>&1; then
     print_error "Docker is not running"
@@ -84,7 +93,7 @@ if ! docker info >/dev/null 2>&1; then
 fi
 ```
 
-**Multi-line Help:**
+**Here-doc for Multi-line Output:**
 ```bash
 show_help() {
     cat << EOF
@@ -98,58 +107,70 @@ EOF
 
 ### Dockerfile Best Practices
 
-- Use specific versions: `debian:bookworm-slim` not `latest`
-- Clean up in same RUN layer: `&& rm -rf /var/lib/apt/lists/*`
-- Install Docker CLI only (not daemon): `docker-ce-cli` not `docker-ce`
-- Install language tools as non-root user: NVM (Node.js), SDKMAN (Java), uv (Python)
-- Use official installers from trusted sources
+- Base image: `debian:bookworm-slim` (specific version, not latest)
+- Clean apt cache in same RUN layer: `&& rm -rf /var/lib/apt/lists/*`
+- Docker CLI only (not daemon): install `docker-ce-cli` not `docker-ce`
+- Install dev tools as non-root user (coder): NVM, SDKMAN, uv, Bun, ast-grep
 - Create non-root user: `useradd -m -s /bin/bash -u 1000 coder`
-- Document security/architecture decisions in comments
+- Use official installers from trusted sources (get.sdkman.io, bun.sh, etc.)
+- Document architecture decisions in comments
 
 ### Security Conventions
 
 **Volume Mounts:**
-- Mount config files read-only (`:ro`) when possible
+- Config files: read-only (`:ro`) - `~/.config/opencode/`
+- Data directories: read-write - `~/.local/share/opencode/`, `~/.cache/`
 - Only mount what's necessary
-- Separate read-only config from read-write data directories
 
 **Sensitive Files (never commit):**
 - `.env`, `auth.json`, `*.pem`, `*.key`, credentials
 
 **Docker Socket:**
-- Use host Docker socket mounting (no privileged mode)
-- No Docker-in-Docker daemon - CLI only uses host daemon
-- Handle socket permissions dynamically in entrypoint
+- Mount host socket: `-v /var/run/docker.sock:/var/run/docker.sock`
+- No privileged mode needed
+- Handle socket GID dynamically in entrypoint
 
 **Container Execution:**
-- Run as non-root user inside container
-- Map container UID/GID to match host user
+- Run as non-root user (coder) inside container
+- Map UID/GID to match host user via entrypoint
 - Use `--rm` flag for automatic cleanup
+- Use `--network host` for simplicity
 
-### File Organization
+## Volume Mounts Reference
+
+| Host Path | Container Path | Mode | Purpose |
+|-----------|---------------|------|---------|
+| `$PROJECT_DIR` | `/workspace` | rw | Project files |
+| `~/.config/opencode/` | `/home/coder/.config/opencode/` | ro | Config, skills, commands, agents |
+| `~/.local/share/opencode/` | `/home/coder/.local/share/opencode/` | rw | Auth, sessions, storage |
+| `~/.cache/opencode/` | `/home/coder/.cache/opencode/` | rw | Provider cache |
+| `~/.cache/oh-my-opencode/` | `/home/coder/.cache/oh-my-opencode/` | rw | Oh My OpenCode cache |
+| `/var/run/docker.sock` | `/var/run/docker.sock` | rw | Docker socket |
+
+## File Organization
 
 ```
 project/
-  AGENTS.md                           # Agent guidelines (this file)
-  README.md                           # User documentation
-  Dockerfile                          # Container image definition
-  entrypoint.sh                       # Container entrypoint script
-  opencode-dockerized.sh              # Main wrapper script
-  run-simple.sh                       # Simplified alternative runner
-  setup.sh                            # First-time setup script
-  opencode-dockerized-completion.bash # Bash completion
-  opencode-dockerized-completion.zsh  # Zsh completion
-  .env.example                        # Environment variable template
-  .gitignore                          # Git ignore patterns
+├── AGENTS.md                           # Agent guidelines (this file)
+├── README.md                           # User documentation
+├── Dockerfile                          # Container image definition
+├── entrypoint.sh                       # Container entrypoint (UID/GID mapping)
+├── opencode-dockerized.sh              # Main wrapper script
+├── run-simple.sh                       # Simplified alternative runner
+├── setup.sh                            # First-time setup script
+├── opencode-dockerized-completion.bash # Bash completion
+├── opencode-dockerized-completion.zsh  # Zsh completion
+├── .env.example                        # Environment variable template
+└── .gitignore                          # Git ignore patterns
 ```
 
-### Naming Conventions
+## Naming Conventions
 
 | Type | Convention | Example |
 |------|------------|---------|
-| Shell scripts | kebab-case with `.sh` | `opencode-dockerized.sh` |
+| Shell scripts | kebab-case.sh | `opencode-dockerized.sh` |
 | Functions | snake_case | `check_docker()`, `build_image()` |
 | Constants | UPPER_SNAKE | `IMAGE_NAME`, `SCRIPT_DIR` |
 | Local variables | lower_snake | `project_dir`, `volume_args` |
 | Docker images | kebab-case:tag | `opencode-dockerized:latest` |
-| Container names | kebab-case with suffix | `opencode-myproject-abc123` |
+| Container names | kebab-case-suffix | `opencode-myproject-abc123` |
