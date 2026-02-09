@@ -70,6 +70,82 @@ ensure_any_file '{}' "$HOME/.config/opencode/opencode.json" "$HOME/.config/openc
 
 interactive_config_setup
 
+# Shell completions setup
+echo ""
+echo -e "${BLUE}Shell Completions Setup${NC}"
+echo "Would you like to install shell completions? (enables tab completion for commands)"
+read -r -p "Install completions? (y/n): " install_completions
+
+if [[ "$install_completions" =~ ^[Yy]$ ]]; then
+    # Detect shell
+    detected_shell=""
+    if [ -n "$BASH_VERSION" ]; then
+        detected_shell="bash"
+    elif [ -n "$ZSH_VERSION" ]; then
+        detected_shell="zsh"
+    fi
+
+    echo ""
+    echo "Detected shell: ${detected_shell:-unknown}"
+    echo "Available completions:"
+    echo "  1) bash"
+    echo "  2) zsh"
+    echo "  3) both"
+    echo "  4) skip"
+    read -r -p "Select option (1-4): " shell_choice
+
+    install_bash_completion() {
+        local bash_rc="$HOME/.bashrc"
+        local completion_line="[ -f \"$SCRIPT_DIR/completions/bash.sh\" ] && source \"$SCRIPT_DIR/completions/bash.sh\""
+        
+        if grep -qF "$completion_line" "$bash_rc" 2>/dev/null; then
+            echo -e "${GREEN}✓${NC} Bash completion already configured in ~/.bashrc"
+        else
+            echo "" >> "$bash_rc"
+            echo "# OpenCode Dockerized completion" >> "$bash_rc"
+            echo "$completion_line" >> "$bash_rc"
+            echo -e "${GREEN}✓${NC} Added bash completion to ~/.bashrc"
+            echo -e "${YELLOW}  Run: source ~/.bashrc${NC}"
+        fi
+    }
+
+    install_zsh_completion() {
+        local zsh_rc="$HOME/.zshrc"
+        local completion_line="[ -f \"$SCRIPT_DIR/completions/zsh.sh\" ] && source \"$SCRIPT_DIR/completions/zsh.sh\""
+        
+        if grep -qF "$completion_line" "$zsh_rc" 2>/dev/null; then
+            echo -e "${GREEN}✓${NC} Zsh completion already configured in ~/.zshrc"
+        else
+            echo "" >> "$zsh_rc"
+            echo "# OpenCode Dockerized completion" >> "$zsh_rc"
+            echo "$completion_line" >> "$zsh_rc"
+            echo -e "${GREEN}✓${NC} Added zsh completion to ~/.zshrc"
+            echo -e "${YELLOW}  Run: source ~/.zshrc${NC}"
+        fi
+    }
+
+    case "$shell_choice" in
+        1)
+            install_bash_completion
+            ;;
+        2)
+            install_zsh_completion
+            ;;
+        3)
+            install_bash_completion
+            install_zsh_completion
+            ;;
+        4)
+            echo "Skipping completions installation."
+            ;;
+        *)
+            echo -e "${YELLOW}Invalid choice, skipping completions.${NC}"
+            ;;
+    esac
+else
+    echo "Skipping completions installation."
+fi
+
 echo ""
 echo -e "${GREEN}Setup complete!${NC}"
 echo ""
