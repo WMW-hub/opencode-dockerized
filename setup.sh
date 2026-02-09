@@ -5,6 +5,10 @@
 
 set -e
 
+# Source the shared config module
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/config-lib.sh"
+
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
@@ -61,6 +65,8 @@ ensure_dir "$HOME/.mcp-auth"
 
 # Check/create OpenCode config files
 ensure_any_file '{}' "$HOME/.config/opencode/opencode.json" "$HOME/.config/opencode/opencode.jsonc"
+
+interactive_config_setup
 
 echo ""
 echo -e "${GREEN}Setup complete!${NC}"

@@ -8,6 +8,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE_NAME="opencode-dockerized:latest"
 
+# Source the shared config module
+source "$SCRIPT_DIR/config-lib.sh"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -84,6 +87,11 @@ run_auth() {
     mkdir -p "$HOME/.cache/opencode" 2>/dev/null || true
     mkdir -p "$HOME/.config/opencode" 2>/dev/null || true
     
+    # Parse custom config and build docker arguments
+    parse_config
+    build_mount_args
+    build_env_args
+    
     # Build volume mount arguments for auth
     local volume_args=""
     
@@ -104,6 +112,8 @@ run_auth() {
         -e HOST_GID="$(id -g)" \
         -e TERM="${TERM:-xterm-256color}" \
         $volume_args \
+        "${DOCKER_MOUNT_ARGS[@]}" \
+        "${DOCKER_ENV_ARGS[@]}" \
         "$IMAGE_NAME" \
         opencode auth login
     
@@ -126,6 +136,11 @@ run_opencode() {
     print_info "Starting OpenCode in Docker..."
     print_info "Project directory: $project_dir"
     print_info "Container name: $container_name"
+    
+    # Parse custom config and build docker arguments
+    parse_config
+    build_mount_args
+    build_env_args
     
     # Build volume mount arguments - only mount files that exist
     local volume_args="-v $project_dir:/workspace"
@@ -186,6 +201,8 @@ run_opencode() {
         -e HOST_GID="$(id -g)" \
         -e TERM="${TERM:-xterm-256color}" \
         $volume_args \
+        "${DOCKER_MOUNT_ARGS[@]}" \
+        "${DOCKER_ENV_ARGS[@]}" \
         "$IMAGE_NAME" \
         opencode
 }

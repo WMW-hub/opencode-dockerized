@@ -209,6 +209,65 @@ TERM=xterm-256color
 | `~/.npmrc` | `/home/coder/.npmrc` | read-only | NPM config (optional) |
 | `~/.mcp-auth/` | `/home/coder/.mcp-auth/` | read-only | MCP authentication (optional) |
 
+
+### Custom Global Configuration (Optional)
+
+**Advanced Users:** You can configure custom volume mounts and environment variables to be automatically mounted in the container for all projects. This is useful for:
+
+- **SSH agent forwarding**: Enable `setting.ssh_agent_support=true` for secure git over SSH (recommended)
+- **Global git configuration**: Mount `~/.gitconfig` and global gitignore
+- **Environment variables**: Pass API keys and other credentials
+
+#### Getting Started with Custom Global Config
+
+```bash
+# During setup, you'll be prompted to add custom mounts and env vars
+./setup.sh
+
+# Or manually edit the config file
+~/.config/opencode-dockerized/config
+```
+
+#### Config Format
+
+Configuration is stored in `~/.config/opencode-dockerized/config` (INI format):
+
+```ini
+# Settings (built-in features)
+# Format: setting.<name>=<value>
+setting.ssh_agent_support=true
+
+# Custom volume mounts (read-only by default)
+# Format: mount.<name>=<host_path>:<container_path>[:rw]
+mount.gitconfig=~/.gitconfig:/home/coder/.gitconfig
+
+# Environment variables to pass from host to container
+# Format: env.<name>=<VARIABLE_NAME>
+env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
+env.context7=CONTEXT7_API_KEY
+```
+
+#### Examples
+
+**Example 1: Git configuration with SSH agent forwarding (Recommended)**
+```ini
+setting.ssh_agent_support=true
+mount.gitconfig=~/.gitconfig:/home/coder/.gitconfig
+```
+
+**Example 2: API keys and credentials**
+```ini
+env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
+env.context7=CONTEXT7_API_KEY
+```
+
+**Note:** 
+- **SSH Agent Support**: Use `setting.ssh_agent_support=true` instead of manually mounting `~/.ssh` or passing `SSH_AUTH_SOCK`
+- Mounts are **read-only by default** (append `:rw` for read-write)
+- Paths use `~` which is expanded to your home directory at runtime
+- Environment variables must be set in your host environment to be passed
+- Re-run `./setup.sh` anytime to update your custom configuration
+
 ## 🌍 Portability & Sharing
 
 **This setup is fully portable!** It uses `$HOME` instead of hardcoded paths and works across different users and systems.
@@ -428,7 +487,11 @@ docker build --no-cache -t opencode-dockerized:latest .
 
 - **`opencode-dockerized.sh`** - Main wrapper with all features (build, run, update, version, help)
 - **`run-simple.sh`** - Simplified runner script
-- **`setup.sh`** - First-time initialization (creates config directories)
+- **`setup.sh`** - First-time initialization (creates config directories, prompts for custom config)
+
+### Shared Modules
+
+- **`config-lib.sh`** - Shared configuration library (sourced by other scripts, handles mounts and env vars)
 
 ### Shell Completion
 
@@ -438,6 +501,7 @@ docker build --no-cache -t opencode-dockerized:latest .
 ### Configuration
 
 - **`.env.example`** - Template for environment variables
+- **`config.example`** - Example custom configuration file
 - **`.gitignore`** - Excludes sensitive files from Git
 
 ### How It Works

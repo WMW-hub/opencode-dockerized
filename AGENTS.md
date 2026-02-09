@@ -115,7 +115,7 @@ EOF
 - Use official installers from trusted sources (get.sdkman.io, bun.sh, etc.)
 - Document architecture decisions in comments
 
-### Security Conventions
+### Security Conventionshttps://github.com/glennvdv/opencode-dockerized/pull/2/changes
 
 **Volume Mounts:**
 - Config files: read-only (`:ro`) - `~/.config/opencode/`
@@ -165,6 +165,29 @@ project/
 ```
 
 ## Naming Conventions
+
+### Shared Module (config-lib.sh)
+- Provides reusable functions sourced by multiple scripts
+- Define color codes with defaults: `: "${RED:='\033[0;31m'}"`
+- Check if caller has logging functions before using them: `type print_info >/dev/null 2>&1`
+- Use module logging functions with fallbacks for standalone use
+- Global arrays for state: `declare -a CUSTOM_MOUNTS=()`
+- Document all exported functions with comments
+- INI-style config format: `key.name=value` (not YAML or JSON to avoid dependencies)
+
+### Dockerfile
+- Use specific versions: `debian:bookworm-slim` not `latest`
+- Install Docker CLI only (not daemon): `docker-ce-cli` not `docker-ce`
+- Clean up in same RUN layer: `&& rm -rf /var/lib/apt/lists/*`
+- Non-root user with UID/GID mapping via entrypoint
+- Document security/architecture in comments
+
+### Security
+- Mount configs read-only (`:ro`), never commit `.env` or `auth.json`
+- Use host Docker socket (no privileged mode or Docker-in-Docker)
+- Container uses non-root user with host UID/GID matching
+- Allow users to mount custom paths read-only by default
+- Only pass environment variables explicitly listed in config
 
 | Type | Convention | Example |
 |------|------------|---------|
