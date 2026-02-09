@@ -44,6 +44,10 @@ VOLUME_ARGS="-v $PROJECT_DIR:/workspace"
 [ -d "$HOME/.cache/opencode" ] && \
     VOLUME_ARGS="$VOLUME_ARGS -v $HOME/.cache/opencode:/home/coder/.cache/opencode"
 
+# Oh My OpenCode cache (for oh-my-opencode plugin)
+[ -d "$HOME/.cache/oh-my-opencode" ] && \
+    VOLUME_ARGS="$VOLUME_ARGS -v $HOME/.cache/oh-my-opencode:/home/coder/.cache/oh-my-opencode"
+
 # MCP authentication directory (optional)
 [ -d "$HOME/.mcp-auth" ] && \
     VOLUME_ARGS="$VOLUME_ARGS -v $HOME/.mcp-auth:/home/coder/.mcp-auth:ro"
