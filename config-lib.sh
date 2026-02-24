@@ -71,6 +71,7 @@ declare -a DOCKER_ENV_ARGS=()    # Array of docker -e arguments (populated by bu
 declare -a VOLUME_ARGS=()        # Array of standard volume mount arguments (populated by build_standard_volume_args)
 declare -a GIT_WORKTREE_ARGS=()  # Array of docker args for git worktree support (populated by build_git_worktree_args)
 SSH_AGENT_SUPPORT=false          # Boolean flag for SSH agent forwarding support
+OPENSPEC_SUPPORT=false           # Boolean flag for OpenSpec (spec-driven development) support
 
 # ============================================
 # SHARED HELPERS
@@ -82,6 +83,11 @@ ensure_opencode_dirs() {
     mkdir -p "$HOME/.cache/opencode" 2>/dev/null || true
     mkdir -p "$HOME/.cache/oh-my-opencode" 2>/dev/null || true
     mkdir -p "$HOME/.config/opencode" 2>/dev/null || true
+
+    # Create OpenSpec cache directory if OpenSpec support is enabled
+    if [ "$OPENSPEC_SUPPORT" = true ]; then
+        mkdir -p "$HOME/.cache/openspec" 2>/dev/null || true
+    fi
 }
 
 # Check if Docker image exists locally
@@ -191,6 +197,7 @@ build_common_docker_args() {
         -e "HOST_UID=$(id -u)"
         -e "HOST_GID=$(id -g)"
         -e "TERM=${TERM:-xterm-256color}"
+        -e "OPENSPEC_SUPPORT=$OPENSPEC_SUPPORT"
     )
 }
 
@@ -236,6 +243,12 @@ build_standard_volume_args() {
         VOLUME_ARGS+=(-v "$HOME/.cache/oh-my-opencode:/home/coder/.cache/oh-my-opencode")
     fi
 
+    # OpenSpec cache directory (only when OpenSpec support is enabled)
+    if [ "$OPENSPEC_SUPPORT" = true ] && [ -d "$HOME/.cache/openspec" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.cache/openspec:/home/coder/.cache/openspec")
+        config_info "OpenSpec support enabled — cache directory mounted"
+    fi
+
     # MCP authentication directory (optional)
     if [ -d "$HOME/.mcp-auth" ]; then
         VOLUME_ARGS+=(-v "$HOME/.mcp-auth:/home/coder/.mcp-auth:ro")
@@ -277,6 +290,12 @@ init_config_file() {
 # SSH Agent Forwarding (enables git over SSH in container)
 # Automatically mounts SSH_AUTH_SOCK socket and passes the environment variable
 # setting.ssh_agent_support=false
+
+# OpenSpec Support (spec-driven development for AI coding assistants)
+# When enabled, OpenSpec is available inside the container for spec-driven workflows
+# On first run, 'openspec init --tools opencode' is automatically executed in new projects
+# See: https://github.com/Fission-AI/OpenSpec/
+# setting.openspec_support=false
 
 # Custom volume mounts (read-only by default)
 # Format: mount.<name>=<host_path>:<container_path>[:rw]
@@ -327,13 +346,15 @@ load_config() {
 
     # Read settings (lines starting with "setting.")
     SSH_AGENT_SUPPORT=false
+    OPENSPEC_SUPPORT=false
     while IFS='=' read -r key value; do
         [[ "$key" =~ ^[[:space:]]*# ]] && continue
-        [[ "$key" =~ ^[[:space:]]*setting\.ssh_agent_support ]] || continue
+        [[ "$key" =~ ^[[:space:]]*setting\. ]] || continue
         # Remove leading/trailing whitespace
         value="${value#"${value%%[![:space:]]*}"}"
         value="${value%"${value##*[![:space:]]}"}"
-        [[ "$value" == "true" ]] && SSH_AGENT_SUPPORT=true
+        [[ "$key" =~ ssh_agent_support ]] && [[ "$value" == "true" ]] && SSH_AGENT_SUPPORT=true
+        [[ "$key" =~ openspec_support ]] && [[ "$value" == "true" ]] && OPENSPEC_SUPPORT=true
     done < "$CONFIG_FILE"
 
     return 0
@@ -351,6 +372,11 @@ save_config() {
         echo "# SSH Agent Forwarding (enables git over SSH in container)"
         echo "# Automatically mounts SSH_AUTH_SOCK socket and passes the environment variable"
         echo "setting.ssh_agent_support=$SSH_AGENT_SUPPORT"
+        echo ""
+        echo "# OpenSpec Support (spec-driven development for AI coding assistants)"
+        echo "# When enabled, OpenSpec is available inside the container for spec-driven workflows"
+        echo "# See: https://github.com/Fission-AI/OpenSpec/"
+        echo "setting.openspec_support=$OPENSPEC_SUPPORT"
         echo ""
         echo "# Custom volume mounts (read-only by default)"
         echo "# Format: mount.<name>=<host_path>:<container_path>[:rw]"
@@ -689,20 +715,68 @@ prompt_env_vars() {
 }
 
 # Interactive SSH agent support prompt
+# If SSH_AGENT_SUPPORT is already set (from a previous config), show current value
+# and only ask if user wants to change it
 prompt_ssh_agent_support() {
     echo ""
     config_info "SSH Agent Forwarding Support"
-    echo "Enable this if you use SSH agent forwarding for git operations over SSH."
-    echo "This automatically mounts the SSH socket and passes the SSH_AUTH_SOCK variable."
-    echo ""
 
-    read -r -p "Enable SSH agent forwarding support? (y/N): " ssh_agent
-    if [[ "$ssh_agent" =~ ^[Yy]$ ]]; then
-        SSH_AGENT_SUPPORT=true
-        config_success "SSH agent forwarding support enabled"
+    if [ "$SSH_AGENT_SUPPORT" = true ]; then
+        config_success "SSH agent forwarding is currently enabled"
+        read -r -p "Keep SSH agent forwarding enabled? (Y/n): " ssh_agent
+        if [[ "$ssh_agent" =~ ^[Nn]$ ]]; then
+            SSH_AGENT_SUPPORT=false
+            config_info "SSH agent forwarding support disabled"
+        else
+            config_success "SSH agent forwarding support remains enabled"
+        fi
     else
-        SSH_AGENT_SUPPORT=false
-        config_info "SSH agent forwarding support disabled"
+        echo "Enable this if you use SSH agent forwarding for git operations over SSH."
+        echo "This automatically mounts the SSH socket and passes the SSH_AUTH_SOCK variable."
+        echo ""
+
+        read -r -p "Enable SSH agent forwarding support? (y/N): " ssh_agent
+        if [[ "$ssh_agent" =~ ^[Yy]$ ]]; then
+            SSH_AGENT_SUPPORT=true
+            config_success "SSH agent forwarding support enabled"
+        else
+            SSH_AGENT_SUPPORT=false
+            config_info "SSH agent forwarding support disabled"
+        fi
+    fi
+}
+
+# Interactive OpenSpec support prompt
+# If OPENSPEC_SUPPORT is already set (from a previous config), show current value
+# and only ask if user wants to change it
+prompt_openspec_support() {
+    echo ""
+    config_info "OpenSpec Support (https://github.com/Fission-AI/OpenSpec/)"
+
+    if [ "$OPENSPEC_SUPPORT" = true ]; then
+        config_success "OpenSpec support is currently enabled"
+        read -r -p "Keep OpenSpec enabled? (Y/n): " openspec
+        if [[ "$openspec" =~ ^[Nn]$ ]]; then
+            OPENSPEC_SUPPORT=false
+            config_info "OpenSpec support disabled"
+        else
+            config_success "OpenSpec support remains enabled"
+        fi
+    else
+        echo "OpenSpec adds spec-driven development (SDD) to AI coding assistants."
+        echo "It helps you agree on what to build before any code is written."
+        echo "When enabled, 'openspec init --tools opencode' runs automatically on first"
+        echo "launch for each project, and the 'openspec' CLI is available in the container."
+        echo ""
+
+        read -r -p "Enable OpenSpec support? (y/N): " openspec
+        if [[ "$openspec" =~ ^[Yy]$ ]]; then
+            OPENSPEC_SUPPORT=true
+            config_success "OpenSpec support enabled"
+        else
+            OPENSPEC_SUPPORT=false
+            config_info "OpenSpec support disabled"
+        fi
     fi
 }
 
@@ -712,6 +786,7 @@ print_config() {
     echo "Current configuration:"
     echo "  Config file: $CONFIG_FILE"
     echo "  SSH agent forwarding: $SSH_AGENT_SUPPORT"
+    echo "  OpenSpec support: $OPENSPEC_SUPPORT"
 
     if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ]; then
         echo ""
@@ -755,6 +830,7 @@ interactive_config_setup() {
         append|overwrite)
             [ "$CONFIG_MODE" = "append" ] && load_config
             prompt_ssh_agent_support
+            prompt_openspec_support
             prompt_custom_mounts
             prompt_env_vars
             save_config
@@ -764,9 +840,10 @@ interactive_config_setup() {
             read -r -p "Would you like to configure custom mounts and environment variables now? (y/N): " setup_custom
             if [[ "$setup_custom" =~ ^[Yy]$ ]]; then
                 prompt_ssh_agent_support
+                prompt_openspec_support
                 prompt_custom_mounts
                 prompt_env_vars
-                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ]; then
+                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ] || [ "$OPENSPEC_SUPPORT" = true ]; then
                     save_config
                     print_config
                 else

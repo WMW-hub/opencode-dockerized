@@ -66,6 +66,21 @@ export USER=coder
 # Source NVM and SDKMAN to make Node.js and Java available
 export NVM_DIR="/home/coder/.nvm"
 
+# Auto-initialize OpenSpec for the project if enabled and not yet initialized
+# Runs 'openspec init --tools opencode' in /workspace when:
+#   1. OPENSPEC_SUPPORT=true (set by opencode-dockerized config)
+#   2. No openspec/ directory exists in the project yet
+#   3. The openspec CLI is available in the image
+if [ "${OPENSPEC_SUPPORT:-false}" = "true" ] && [ ! -d /workspace/openspec ]; then
+    if command -v openspec >/dev/null 2>&1 || [ -x "$NVM_DIR/default/bin/openspec" ]; then
+        echo "OpenSpec: initializing project with OpenCode tool integration..."
+        # Run as the mapped coder user so files are owned correctly
+        setpriv --reuid="$TARGET_UID" --regid="$TARGET_GID" --init-groups \
+            bash -c "source \$NVM_DIR/nvm.sh && cd /workspace && openspec init --tools opencode" 2>/dev/null || \
+            echo "OpenSpec: init failed (non-fatal) — you can run 'openspec init --tools opencode' manually"
+    fi
+fi
+
 # Use setpriv to drop privileges and exec the command as the mapped user
 exec setpriv --reuid="$TARGET_UID" --regid="$TARGET_GID" --init-groups \
     bash -c "source \$NVM_DIR/nvm.sh && source /home/coder/.sdkman/bin/sdkman-init.sh 2>/dev/null || true && exec \"\$@\"" \
