@@ -96,6 +96,30 @@ RUN bash -c "source $NVM_DIR/nvm.sh && npm install -g opencode-ai@latest"
 # Switch back to root for entrypoint setup
 USER root
 
+# Download Lombok for jdtls LSP support (-javaagent)
+# Version should match what projects use in their pom.xml
+ARG LOMBOK_VERSION=1.18.38
+RUN mkdir -p /opt/lombok && \
+    curl -fsSL -o /opt/lombok/lombok.jar \
+    "https://repo1.maven.org/maven2/org/projectlombok/lombok/${LOMBOK_VERSION}/lombok-${LOMBOK_VERSION}.jar"
+
+# Write OpenCode config that wires jdtls to use the Lombok wrapper
+# Loaded via OPENCODE_CONFIG env var (custom config slot in OpenCode's precedence chain:
+# remote → global → OPENCODE_CONFIG → project → OPENCODE_CONFIG_CONTENT)
+RUN cat > /opt/lombok/opencode-lombok.json << 'JSONEOF'
+{
+  "$schema": "https://opencode.ai/config.json",
+  "lsp": {
+    "jdtls": {
+      "command": ["jdtls", "--jvm-arg=-javaagent:/opt/lombok/lombok.jar"],
+      "extensions": [".java"]
+    }
+  }
+}
+JSONEOF
+ENV PATH="/home/coder/.local/share/opencode/bin/jdtls/bin:${PATH}"
+ENV OPENCODE_CONFIG=/opt/lombok/opencode-lombok.json
+
 # Create necessary directories with proper permissions
 RUN mkdir -p /home/coder/.config/opencode && \
     mkdir -p /home/coder/.local/share/opencode && \
