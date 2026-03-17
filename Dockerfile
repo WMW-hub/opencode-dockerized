@@ -4,7 +4,8 @@ FROM debian:bookworm-slim
 
 # Parameterize tool versions for easier updates
 ARG NVM_VERSION=v0.40.1
-ARG JAVA_VERSION=21.0.5-tem
+ARG JAVA_VERSION=25.0.2-tem
+ARG MAVEN_VERSION=3.9.14
 
 # Install base dependencies and useful CLI tools for coding agents
 RUN apt-get update && apt-get install -y \
@@ -48,13 +49,15 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
 RUN useradd -m -s /bin/bash -u 1000 coder && \
     echo "coder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Install SDKMAN and Java as coder user
+# Install SDKMAN, Java and Maven as coder user
 USER coder
 WORKDIR /home/coder
 RUN curl -s "https://get.sdkman.io" | bash && \
     bash -c "source /home/coder/.sdkman/bin/sdkman-init.sh && \
     sdk install java ${JAVA_VERSION} && \
-    sdk default java ${JAVA_VERSION}"
+    sdk default java ${JAVA_VERSION} && \
+    sdk install maven ${MAVEN_VERSION} && \
+    sdk default maven ${MAVEN_VERSION}"
 
 # Install NVM and Node.js LTS as coder user
 ENV NVM_DIR="/home/coder/.nvm"
@@ -82,7 +85,7 @@ ENV BUN_INSTALL="/home/coder/.bun"
 
 # Add nvm, node, sdkman, uv, bun, and ast-grep to PATH
 # Node.js is available via the NVM default symlink created above
-ENV PATH="$BUN_INSTALL/bin:$NVM_DIR/default:/home/coder/.local/bin:/home/coder/.sdkman/candidates/java/current/bin:$PATH"
+ENV PATH="$BUN_INSTALL/bin:$NVM_DIR/default:/home/coder/.local/bin:/home/coder/.sdkman/candidates/java/current/bin:/home/coder/.sdkman/candidates/maven/current/bin:$PATH"
 ENV JAVA_HOME="/home/coder/.sdkman/candidates/java/current"
 
 # Install OpenCode globally
