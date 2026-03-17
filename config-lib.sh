@@ -178,6 +178,11 @@ build_standard_volume_args() {
         VOLUME_ARGS+=(-v "$HOME/.npmrc:/home/coder/.npmrc:ro")
     fi
 
+    # Maven configuration (optional)
+    if [ -f "$HOME/.m2/settings.xml" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.m2/settings.xml:/home/coder/.m2/settings.xml:ro")
+    fi
+
     # Docker socket (optional, for Docker-in-Docker operations)
     if [ "$include_docker_socket" = true ] && [ -S /var/run/docker.sock ]; then
         VOLUME_ARGS+=(-v /var/run/docker.sock:/var/run/docker.sock)
