@@ -51,7 +51,7 @@ RUN useradd -m -s /bin/bash -u 1000 coder && \
     echo "coder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # Install SDKMAN, Java (multiple versions) and Maven as coder user
-# Both Java 17 and 25 are installed; Java 25 is the default.
+# Both Java 17 and 25 are installed; Java 17 is the default.
 # To switch at runtime: sdk use java <version>   (current shell only)
 #                    or: sdk default java <version> (all future shells)
 # Available versions: sdk list java | grep installed
@@ -61,7 +61,7 @@ RUN curl -s "https://get.sdkman.io" | bash && \
     bash -c "source /home/coder/.sdkman/bin/sdkman-init.sh && \
     sdk install java ${JAVA_17_VERSION} && \
     sdk install java ${JAVA_25_VERSION} && \
-    sdk default java ${JAVA_25_VERSION} && \
+    sdk default java ${JAVA_17_VERSION} && \
     sdk install maven ${MAVEN_VERSION} && \
     sdk default maven ${MAVEN_VERSION}"
 
