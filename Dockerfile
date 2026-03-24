@@ -112,12 +112,14 @@ RUN mkdir -p /opt/lombok && \
 # Write OpenCode config that wires jdtls to use the Lombok wrapper
 # Loaded via OPENCODE_CONFIG env var (custom config slot in OpenCode's precedence chain:
 # remote → global → OPENCODE_CONFIG → project → OPENCODE_CONFIG_CONTENT)
+# jdtls requires Java 21+ to run (even for Java 17 projects), so we pin it to Java 25
+# via --java-executable while the user's default JAVA_HOME stays at Java 17 for builds.
 RUN cat > /opt/lombok/opencode-lombok.json << 'JSONEOF'
 {
   "$schema": "https://opencode.ai/config.json",
   "lsp": {
     "jdtls": {
-      "command": ["jdtls", "--jvm-arg=-javaagent:/opt/lombok/lombok.jar"],
+      "command": ["jdtls", "--java-executable", "/home/coder/.sdkman/candidates/java/${JAVA_25_VERSION}/bin/java", "--jvm-arg=-javaagent:/opt/lombok/lombok.jar"],
       "extensions": [".java"]
     }
   }
