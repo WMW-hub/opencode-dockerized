@@ -83,6 +83,14 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 # See: https://ast-grep.github.io/
 RUN bash -c "source $NVM_DIR/nvm.sh && npm install -g @ast-grep/cli"
 
+# Install frontend LSP servers for OpenCode language intelligence
+# - typescript-language-server: LSP for TypeScript/JavaScript/React (JSX/TSX)
+# - typescript: Required peer dependency for typescript-language-server
+# - vscode-langservers-extracted: LSP servers for CSS/SCSS/LESS, HTML, and JSON
+# See: https://github.com/typescript-language-server/typescript-language-server
+# See: https://github.com/hrsh7th/vscode-langservers-extracted
+RUN bash -c "source $NVM_DIR/nvm.sh && npm install -g typescript-language-server typescript vscode-langservers-extracted"
+
 # Install Bun (fast JavaScript runtime and package manager)
 # Required by oh-my-opencode for optimal performance
 # See: https://bun.sh/
@@ -121,6 +129,22 @@ RUN cat > /opt/lombok/opencode-lombok.json << 'JSONEOF'
     "jdtls": {
       "command": ["jdtls", "--java-executable", "/home/coder/.sdkman/candidates/java/${JAVA_25_VERSION}/bin/java", "--jvm-arg=-javaagent:/opt/lombok/lombok.jar"],
       "extensions": [".java"]
+    },
+    "typescript-language-server": {
+      "command": ["typescript-language-server", "--stdio"],
+      "extensions": [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"]
+    },
+    "css": {
+      "command": ["vscode-css-language-server", "--stdio"],
+      "extensions": [".css", ".scss", ".less"]
+    },
+    "html": {
+      "command": ["vscode-html-language-server", "--stdio"],
+      "extensions": [".html", ".htm"]
+    },
+    "json": {
+      "command": ["vscode-json-language-server", "--stdio"],
+      "extensions": [".json", ".jsonc"]
     }
   }
 }
