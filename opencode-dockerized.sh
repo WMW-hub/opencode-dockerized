@@ -45,6 +45,21 @@ check_docker() {
     fi
 }
 
+# Function to verify OpenSpec is installed in the Docker image
+# Called when OPENSPEC_SUPPORT is enabled to confirm the binary is available
+check_openspec() {
+    if [ "$OPENSPEC_SUPPORT" != true ]; then
+        return 0
+    fi
+
+    if ! docker run --rm --entrypoint bash "$IMAGE_NAME" -c "command -v openspec" >/dev/null 2>&1; then
+        print_warning "OpenSpec support is enabled but 'openspec' was not found in the image"
+        print_info "Rebuild the image to install OpenSpec: $0 build"
+        return 1
+    fi
+    return 0
+}
+
 # Function to build the Docker image
 build_image() {
     print_info "Building OpenCode Docker image..."
@@ -152,12 +167,19 @@ run_opencode() {
     build_common_docker_args
     build_standard_volume_args "$project_dir" true
 
+    # Verify OpenSpec is available in the image if enabled
+    check_openspec
+
     # Build the full docker run command as an array
+    # CONTAINER_WORKDIR is set by build_standard_volume_args (host path with $HOME stripped)
     local -a docker_cmd=(
         docker run -it
         --name "$container_name"
+        --workdir "$CONTAINER_WORKDIR"
+        -e "OPENCODE_WORKDIR=$CONTAINER_WORKDIR"
         "${DOCKER_COMMON_ARGS[@]}"
         "${VOLUME_ARGS[@]}"
+        "${GIT_WORKTREE_ARGS[@]}"
         "${DOCKER_MOUNT_ARGS[@]}"
         "${DOCKER_ENV_ARGS[@]}"
         "$IMAGE_NAME"
@@ -189,15 +211,17 @@ update_opencode() {
 
     # Show current version before update
     print_info "Current OpenCode version:"
-    docker run --rm "$IMAGE_NAME" npm list -g opencode-ai --depth=0 2>/dev/null || true
+    docker run --rm --entrypoint bash "$IMAGE_NAME" -c "source \$NVM_DIR/nvm.sh && npm list -g opencode-ai --depth=0" 2>/dev/null || true
+    docker run --rm --entrypoint bash "$IMAGE_NAME" -c "source \$NVM_DIR/nvm.sh && npm list -g @fission-ai/openspec --depth=0" 2>/dev/null || true
 
     # Rebuild with cache-busting to force fresh npm install
-    print_info "Rebuilding image with latest OpenCode..."
+    print_info "Rebuilding image with latest OpenCode and OpenSpec..."
     docker build --build-arg "OPENCODE_BUILD_TIME=$(date +%s)" -t "$IMAGE_NAME" "$SCRIPT_DIR"
 
     # Show new version after update
     print_info "Updated OpenCode version:"
-    docker run --rm "$IMAGE_NAME" npm list -g opencode-ai --depth=0 2>/dev/null || true
+    docker run --rm --entrypoint bash "$IMAGE_NAME" -c "source \$NVM_DIR/nvm.sh && npm list -g opencode-ai --depth=0" 2>/dev/null || true
+    docker run --rm --entrypoint bash "$IMAGE_NAME" -c "source \$NVM_DIR/nvm.sh && npm list -g @fission-ai/openspec --depth=0" 2>/dev/null || true
 
     print_success "OpenCode updated successfully"
 }
@@ -288,6 +312,13 @@ Security Features:
     - Non-root user: runs as non-root user inside container
     - Automatic cleanup: containers are removed on exit (--rm)
 
+OpenSpec (Spec-Driven Development):
+    When enabled (setting.openspec_support=true in config), OpenSpec is available
+    inside the container. On first run for a project, 'openspec init --tools opencode'
+    is automatically executed. On every run, 'openspec update' regenerates instruction
+    files to stay in sync with the installed CLI version.
+    See: https://github.com/Fission-AI/OpenSpec/
+
 Note: Docker socket is mounted for Docker-in-Docker support. This grants the
 container full access to the host Docker daemon. Disable by removing the socket
 mount in the config if not needed.
@@ -299,10 +330,14 @@ EOF
 # Function to show version
 show_version() {
     check_image "$IMAGE_NAME" || exit 1
-    docker run --rm \
-        -e "HOST_UID=$(id -u)" \
-        -e "HOST_GID=$(id -g)" \
-        "$IMAGE_NAME" opencode --version
+    docker run --rm --entrypoint bash "$IMAGE_NAME" -c "source \$NVM_DIR/nvm.sh && opencode --version"
+
+    # Show OpenSpec version if support is enabled
+    parse_config
+    if [ "$OPENSPEC_SUPPORT" = true ]; then
+        print_info "OpenSpec version:"
+        docker run --rm --entrypoint bash "$IMAGE_NAME" -c "command -v openspec >/dev/null 2>&1 && openspec --version || echo 'openspec not found in image'"
+    fi
 }
 
 # Main script logic

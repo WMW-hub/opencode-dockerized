@@ -69,11 +69,28 @@ declare -a CUSTOM_ENV_VARS=()    # Array of "VARIABLE_NAME"
 declare -a DOCKER_MOUNT_ARGS=()  # Array of docker -v arguments (populated by build_mount_args)
 declare -a DOCKER_ENV_ARGS=()    # Array of docker -e arguments (populated by build_env_args)
 declare -a VOLUME_ARGS=()        # Array of standard volume mount arguments (populated by build_standard_volume_args)
+declare -a GIT_WORKTREE_ARGS=()  # Array of docker args for git worktree support (populated by build_git_worktree_args)
 SSH_AGENT_SUPPORT=false          # Boolean flag for SSH agent forwarding support
+OPENSPEC_SUPPORT=false           # Boolean flag for OpenSpec (spec-driven development) support
 
 # ============================================
 # SHARED HELPERS
 # ============================================
+
+# Compute the container mount path for a project directory.
+# Strips $HOME prefix so the path is portable across machines/users.
+# Example: /home/user/projects/acme/frontend -> /projects/acme/frontend
+#          /opt/work/myproject                -> /opt/work/myproject (unchanged)
+# Usage: container_path=$(compute_container_path "/home/user/projects/myapp")
+compute_container_path() {
+    local host_path="$1"
+
+    if [[ "$host_path" == "$HOME"/* ]]; then
+        echo "${host_path#"$HOME"}"
+    else
+        echo "$host_path"
+    fi
+}
 
 # Ensure all required OpenCode directories exist on host
 ensure_opencode_dirs() {
@@ -81,6 +98,12 @@ ensure_opencode_dirs() {
     mkdir -p "$HOME/.cache/opencode" 2>/dev/null || true
     mkdir -p "$HOME/.cache/oh-my-opencode" 2>/dev/null || true
     mkdir -p "$HOME/.config/opencode" 2>/dev/null || true
+
+    # Create OpenSpec directories if OpenSpec support is enabled
+    if [ "$OPENSPEC_SUPPORT" = true ]; then
+        mkdir -p "$HOME/.cache/openspec" 2>/dev/null || true
+        mkdir -p "$HOME/.config/openspec" 2>/dev/null || true
+    fi
 }
 
 # Check if Docker image exists locally
@@ -110,6 +133,75 @@ generate_random_suffix() {
     printf '%04x%04x' $RANDOM $RANDOM
 }
 
+# Detect if a directory is a git worktree and return the main repo's .git directory path
+# A worktree has a .git FILE (not directory) containing "gitdir: <path>"
+# Returns (via stdout): "<git_common_dir>" if worktree, empty string otherwise
+# Usage: main_git_dir=$(detect_git_worktree "/path/to/worktree")
+detect_git_worktree() {
+    local project_dir="$1"
+
+    # Quick check: if .git is a directory (normal repo) or doesn't exist, not a worktree
+    if [ ! -f "$project_dir/.git" ]; then
+        return 0
+    fi
+
+    # Use git to reliably resolve paths (handles relative/absolute gitdir pointers)
+    if ! command -v git >/dev/null 2>&1; then
+        config_warning "Git worktree detected but 'git' is not installed on the host — git info will be unavailable in container"
+        return 0
+    fi
+
+    # git rev-parse --git-common-dir gives us the shared .git directory
+    local git_common_dir
+    git_common_dir=$(git -C "$project_dir" rev-parse --git-common-dir 2>/dev/null) || return 0
+
+    # Resolve to absolute path
+    if [[ "$git_common_dir" != /* ]]; then
+        git_common_dir=$(cd "$project_dir" && cd "$git_common_dir" && pwd)
+    else
+        git_common_dir=$(cd "$git_common_dir" && pwd)
+    fi
+
+    # Sanity check: the common dir should be a real .git directory
+    if [ ! -d "$git_common_dir/objects" ] || [ ! -d "$git_common_dir/refs" ]; then
+        return 0
+    fi
+
+    echo "$git_common_dir"
+}
+
+# Build Docker volume/bind args needed for git worktree support
+# When the project is a git worktree, the .git file points to the main repo's
+# .git directory which lives outside the project dir. We mount the main .git
+# directory (read-only) at its real host path so the gitdir pointer resolves
+# correctly inside the container.
+#
+# Read-only is intentional: it preserves the sandbox boundary (container only
+# has write access to the mounted project directory). Read operations like
+# git log, status, diff, and branch work. Write operations (commit, stash,
+# fetch) will fail — run those on the host.
+#
+# Populates GIT_WORKTREE_ARGS array
+# Usage: build_git_worktree_args "/path/to/project"
+build_git_worktree_args() {
+    local project_dir="$1"
+
+    GIT_WORKTREE_ARGS=()
+
+    local git_common_dir
+    git_common_dir=$(detect_git_worktree "$project_dir")
+
+    if [ -z "$git_common_dir" ]; then
+        return 0
+    fi
+
+    config_info "Git worktree detected — mounting main .git directory (read-only) for git support"
+    config_info "Main git directory: $git_common_dir"
+
+    # Mount the main repo's .git directory at its real host path (read-only)
+    GIT_WORKTREE_ARGS+=(-v "$git_common_dir:$git_common_dir:ro")
+}
+
 # Build common Docker run arguments shared by run_opencode and run_auth
 # Populates DOCKER_COMMON_ARGS array
 # Usage: build_common_docker_args
@@ -121,11 +213,14 @@ build_common_docker_args() {
         -e "HOST_UID=$(id -u)"
         -e "HOST_GID=$(id -g)"
         -e "TERM=${TERM:-xterm-256color}"
+        -e "OPENSPEC_SUPPORT=$OPENSPEC_SUPPORT"
     )
 }
 
 # Build standard volume mount arguments for OpenCode directories
-# Populates VOLUME_ARGS array
+# Populates VOLUME_ARGS and CONTAINER_WORKDIR
+# The project is mounted at a path derived from the host path (with $HOME stripped)
+# so that OpenCode stores a unique, meaningful directory per project in its session DB.
 # Usage: build_standard_volume_args "/path/to/project" [include_docker_socket]
 build_standard_volume_args() {
     local project_dir="$1"
@@ -133,8 +228,15 @@ build_standard_volume_args() {
 
     VOLUME_ARGS=()
 
-    # Project directory (read-write)
-    VOLUME_ARGS+=(-v "$project_dir:/workspace")
+    # Compute container-side mount path: strip $HOME prefix for portability
+    # e.g. /home/user/projects/acme/frontend -> /projects/acme/frontend
+    CONTAINER_WORKDIR=$(compute_container_path "$project_dir")
+
+    # Project directory (read-write) — mounted at the computed path
+    VOLUME_ARGS+=(-v "$project_dir:$CONTAINER_WORKDIR")
+
+    # Git worktree support: mount main .git directory if project is a worktree
+    build_git_worktree_args "$project_dir"
 
     # OpenCode configuration directory (read-only)
     # Includes: opencode.json, AGENTS.md, .env, agent/, command/, plugin/, node_modules/, etc.
@@ -161,6 +263,18 @@ build_standard_volume_args() {
     # Oh My OpenCode cache directory
     if [ -d "$HOME/.cache/oh-my-opencode" ]; then
         VOLUME_ARGS+=(-v "$HOME/.cache/oh-my-opencode:/home/coder/.cache/oh-my-opencode")
+    fi
+
+    # OpenSpec cache directory (only when OpenSpec support is enabled)
+    if [ "$OPENSPEC_SUPPORT" = true ] && [ -d "$HOME/.cache/openspec" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.cache/openspec:/home/coder/.cache/openspec")
+        config_info "OpenSpec support enabled — cache directory mounted"
+    fi
+
+    # OpenSpec config directory (only when OpenSpec support is enabled)
+    if [ "$OPENSPEC_SUPPORT" = true ] && [ -d "$HOME/.config/openspec" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.config/openspec:/home/coder/.config/openspec:ro")
+        config_info "OpenSpec config directory mounted"
     fi
 
     # MCP authentication directory (optional)
@@ -209,6 +323,13 @@ init_config_file() {
 # SSH Agent Forwarding (enables git over SSH in container)
 # Automatically mounts SSH_AUTH_SOCK socket and passes the environment variable
 # setting.ssh_agent_support=false
+
+# OpenSpec Support (spec-driven development for AI coding assistants)
+# When enabled, OpenSpec is available inside the container for spec-driven workflows
+# On first run, 'openspec init --tools opencode' is automatically executed in new projects
+# Then 'openspec update' runs on every launch to keep instruction files in sync
+# See: https://github.com/Fission-AI/OpenSpec/
+# setting.openspec_support=false
 
 # Custom volume mounts (read-only by default)
 # Format: mount.<name>=<host_path>:<container_path>[:rw]
@@ -259,13 +380,15 @@ load_config() {
 
     # Read settings (lines starting with "setting.")
     SSH_AGENT_SUPPORT=false
+    OPENSPEC_SUPPORT=false
     while IFS='=' read -r key value; do
         [[ "$key" =~ ^[[:space:]]*# ]] && continue
-        [[ "$key" =~ ^[[:space:]]*setting\.ssh_agent_support ]] || continue
+        [[ "$key" =~ ^[[:space:]]*setting\. ]] || continue
         # Remove leading/trailing whitespace
         value="${value#"${value%%[![:space:]]*}"}"
         value="${value%"${value##*[![:space:]]}"}"
-        [[ "$value" == "true" ]] && SSH_AGENT_SUPPORT=true
+        [[ "$key" =~ ssh_agent_support ]] && [[ "$value" == "true" ]] && SSH_AGENT_SUPPORT=true
+        [[ "$key" =~ openspec_support ]] && [[ "$value" == "true" ]] && OPENSPEC_SUPPORT=true
     done < "$CONFIG_FILE"
 
     return 0
@@ -283,6 +406,11 @@ save_config() {
         echo "# SSH Agent Forwarding (enables git over SSH in container)"
         echo "# Automatically mounts SSH_AUTH_SOCK socket and passes the environment variable"
         echo "setting.ssh_agent_support=$SSH_AGENT_SUPPORT"
+        echo ""
+        echo "# OpenSpec Support (spec-driven development for AI coding assistants)"
+        echo "# When enabled, OpenSpec is available inside the container for spec-driven workflows"
+        echo "# See: https://github.com/Fission-AI/OpenSpec/"
+        echo "setting.openspec_support=$OPENSPEC_SUPPORT"
         echo ""
         echo "# Custom volume mounts (read-only by default)"
         echo "# Format: mount.<name>=<host_path>:<container_path>[:rw]"
@@ -621,20 +749,69 @@ prompt_env_vars() {
 }
 
 # Interactive SSH agent support prompt
+# If SSH_AGENT_SUPPORT is already set (from a previous config), show current value
+# and only ask if user wants to change it
 prompt_ssh_agent_support() {
     echo ""
     config_info "SSH Agent Forwarding Support"
-    echo "Enable this if you use SSH agent forwarding for git operations over SSH."
-    echo "This automatically mounts the SSH socket and passes the SSH_AUTH_SOCK variable."
-    echo ""
 
-    read -r -p "Enable SSH agent forwarding support? (y/N): " ssh_agent
-    if [[ "$ssh_agent" =~ ^[Yy]$ ]]; then
-        SSH_AGENT_SUPPORT=true
-        config_success "SSH agent forwarding support enabled"
+    if [ "$SSH_AGENT_SUPPORT" = true ]; then
+        config_success "SSH agent forwarding is currently enabled"
+        read -r -p "Keep SSH agent forwarding enabled? (Y/n): " ssh_agent
+        if [[ "$ssh_agent" =~ ^[Nn]$ ]]; then
+            SSH_AGENT_SUPPORT=false
+            config_info "SSH agent forwarding support disabled"
+        else
+            config_success "SSH agent forwarding support remains enabled"
+        fi
     else
-        SSH_AGENT_SUPPORT=false
-        config_info "SSH agent forwarding support disabled"
+        echo "Enable this if you use SSH agent forwarding for git operations over SSH."
+        echo "This automatically mounts the SSH socket and passes the SSH_AUTH_SOCK variable."
+        echo ""
+
+        read -r -p "Enable SSH agent forwarding support? (y/N): " ssh_agent
+        if [[ "$ssh_agent" =~ ^[Yy]$ ]]; then
+            SSH_AGENT_SUPPORT=true
+            config_success "SSH agent forwarding support enabled"
+        else
+            SSH_AGENT_SUPPORT=false
+            config_info "SSH agent forwarding support disabled"
+        fi
+    fi
+}
+
+# Interactive OpenSpec support prompt
+# If OPENSPEC_SUPPORT is already set (from a previous config), show current value
+# and only ask if user wants to change it
+prompt_openspec_support() {
+    echo ""
+    config_info "OpenSpec Support (https://github.com/Fission-AI/OpenSpec/)"
+
+    if [ "$OPENSPEC_SUPPORT" = true ]; then
+        config_success "OpenSpec support is currently enabled"
+        read -r -p "Keep OpenSpec enabled? (Y/n): " openspec
+        if [[ "$openspec" =~ ^[Nn]$ ]]; then
+            OPENSPEC_SUPPORT=false
+            config_info "OpenSpec support disabled"
+        else
+            config_success "OpenSpec support remains enabled"
+        fi
+    else
+        echo "OpenSpec adds spec-driven development (SDD) to AI coding assistants."
+        echo "It helps you agree on what to build before any code is written."
+        echo "When enabled, 'openspec init --tools opencode' runs automatically on first"
+        echo "launch for each project, then 'openspec update' keeps instruction files in"
+        echo "sync on every run. The 'openspec' CLI is also available in the container."
+        echo ""
+
+        read -r -p "Enable OpenSpec support? (y/N): " openspec
+        if [[ "$openspec" =~ ^[Yy]$ ]]; then
+            OPENSPEC_SUPPORT=true
+            config_success "OpenSpec support enabled"
+        else
+            OPENSPEC_SUPPORT=false
+            config_info "OpenSpec support disabled"
+        fi
     fi
 }
 
@@ -644,6 +821,7 @@ print_config() {
     echo "Current configuration:"
     echo "  Config file: $CONFIG_FILE"
     echo "  SSH agent forwarding: $SSH_AGENT_SUPPORT"
+    echo "  OpenSpec support: $OPENSPEC_SUPPORT"
 
     if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ]; then
         echo ""
@@ -687,6 +865,7 @@ interactive_config_setup() {
         append|overwrite)
             [ "$CONFIG_MODE" = "append" ] && load_config
             prompt_ssh_agent_support
+            prompt_openspec_support
             prompt_custom_mounts
             prompt_env_vars
             save_config
@@ -696,9 +875,10 @@ interactive_config_setup() {
             read -r -p "Would you like to configure custom mounts and environment variables now? (y/N): " setup_custom
             if [[ "$setup_custom" =~ ^[Yy]$ ]]; then
                 prompt_ssh_agent_support
+                prompt_openspec_support
                 prompt_custom_mounts
                 prompt_env_vars
-                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ]; then
+                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ] || [ "$OPENSPEC_SUPPORT" = true ]; then
                     save_config
                     print_config
                 else

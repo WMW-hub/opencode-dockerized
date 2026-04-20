@@ -65,10 +65,14 @@ local_random_suffix=$(generate_random_suffix)
 CONTAINER_NAME="opencode-${local_dir_name}-${local_random_suffix}"
 
 # Run OpenCode in Docker
+# CONTAINER_WORKDIR is set by build_standard_volume_args (host path with $HOME stripped)
 docker run -it \
     --name "$CONTAINER_NAME" \
+    --workdir "$CONTAINER_WORKDIR" \
+    -e "OPENCODE_WORKDIR=$CONTAINER_WORKDIR" \
     "${DOCKER_COMMON_ARGS[@]}" \
     "${VOLUME_ARGS[@]}" \
+    "${GIT_WORKTREE_ARGS[@]}" \
     "${DOCKER_MOUNT_ARGS[@]}" \
     "${DOCKER_ENV_ARGS[@]}" \
     "$IMAGE_NAME" \
