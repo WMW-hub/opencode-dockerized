@@ -4,7 +4,10 @@ FROM debian:bookworm-slim
 
 # Parameterize tool versions for easier updates
 ARG NVM_VERSION=v0.40.1
-ARG JAVA_VERSION=21.0.5-tem
+ARG JAVA_17_VERSION=17.0.18-tem
+ARG JAVA_21_VERSION=21.0.10-tem
+ARG JAVA_25_VERSION=25.0.2-tem
+ARG MAVEN_VERSION=3.9.14
 
 # Install base dependencies and useful CLI tools for coding agents
 RUN apt-get update && apt-get install -y \
@@ -48,13 +51,21 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
 RUN useradd -m -s /bin/bash -u 1000 coder && \
     echo "coder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Install SDKMAN and Java as coder user
+# Install SDKMAN, Java (multiple versions) and Maven as coder user
+# Java 17 (default for builds), 21 (for jdtls LSP), and 25 are installed.
+# To switch at runtime: sdk use java <version>   (current shell only)
+#                    or: sdk default java <version> (all future shells)
+# Available versions: sdk list java | grep installed
 USER coder
 WORKDIR /home/coder
 RUN curl -s "https://get.sdkman.io" | bash && \
     bash -c "source /home/coder/.sdkman/bin/sdkman-init.sh && \
-    sdk install java ${JAVA_VERSION} && \
-    sdk default java ${JAVA_VERSION}"
+    sdk install java ${JAVA_17_VERSION} && \
+    sdk install java ${JAVA_21_VERSION} && \
+    sdk install java ${JAVA_25_VERSION} && \
+    sdk default java ${JAVA_17_VERSION} && \
+    sdk install maven ${MAVEN_VERSION} && \
+    sdk default maven ${MAVEN_VERSION}"
 
 # Install NVM and Node.js LTS as coder user
 ENV NVM_DIR="/home/coder/.nvm"
@@ -74,6 +85,14 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 # See: https://ast-grep.github.io/
 RUN bash -c "source $NVM_DIR/nvm.sh && npm install -g @ast-grep/cli"
 
+# Install frontend LSP servers for OpenCode language intelligence
+# - typescript-language-server: LSP for TypeScript/JavaScript/React (JSX/TSX)
+# - typescript: Required peer dependency for typescript-language-server
+# - vscode-langservers-extracted: LSP servers for CSS/SCSS/LESS, HTML, and JSON
+# See: https://github.com/typescript-language-server/typescript-language-server
+# See: https://github.com/hrsh7th/vscode-langservers-extracted
+RUN bash -c "source $NVM_DIR/nvm.sh && npm install -g typescript-language-server typescript vscode-langservers-extracted"
+
 # Install Bun (fast JavaScript runtime and package manager)
 # Required by oh-my-opencode for optimal performance
 # See: https://bun.sh/
@@ -82,7 +101,7 @@ ENV BUN_INSTALL="/home/coder/.bun"
 
 # Add nvm, node, sdkman, uv, bun, and ast-grep to PATH
 # Node.js is available via the NVM default symlink created above
-ENV PATH="$BUN_INSTALL/bin:$NVM_DIR/default:/home/coder/.local/bin:/home/coder/.sdkman/candidates/java/current/bin:$PATH"
+ENV PATH="$BUN_INSTALL/bin:$NVM_DIR/default:/home/coder/.local/bin:/home/coder/.sdkman/candidates/java/current/bin:/home/coder/.sdkman/candidates/maven/current/bin:$PATH"
 ENV JAVA_HOME="/home/coder/.sdkman/candidates/java/current"
 
 # Install OpenCode globally
@@ -92,6 +111,48 @@ RUN bash -c "source $NVM_DIR/nvm.sh && npm install -g opencode-ai@latest"
 
 # Switch back to root for entrypoint setup
 USER root
+
+# Download Lombok for jdtls LSP support (-javaagent)
+# Version should match what projects use in their pom.xml
+ARG LOMBOK_VERSION=1.18.38
+RUN mkdir -p /opt/lombok && \
+    curl -fsSL -o /opt/lombok/lombok.jar \
+    "https://repo1.maven.org/maven2/org/projectlombok/lombok/${LOMBOK_VERSION}/lombok-${LOMBOK_VERSION}.jar"
+
+# Write OpenCode config that wires jdtls to use the Lombok wrapper
+# Loaded via OPENCODE_CONFIG env var (custom config slot in OpenCode's precedence chain:
+# remote → global → OPENCODE_CONFIG → project → OPENCODE_CONFIG_CONTENT)
+# jdtls requires Java 21+ to run (even for Java 17 projects), so we pin it to Java 21
+# via --java-executable while the user's default JAVA_HOME stays at Java 17 for builds.
+RUN cat > /opt/lombok/opencode-lombok.json << JSONEOF
+{
+  "\$schema": "https://opencode.ai/config.json",
+  "lsp": {
+    "jdtls": {
+      "command": ["jdtls", "--java-executable", "/home/coder/.sdkman/candidates/java/${JAVA_21_VERSION}/bin/java", "--jvm-arg=-javaagent:/opt/lombok/lombok.jar"],
+      "extensions": [".java"]
+    },
+    "typescript-language-server": {
+      "command": ["typescript-language-server", "--stdio"],
+      "extensions": [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"]
+    },
+    "css": {
+      "command": ["vscode-css-language-server", "--stdio"],
+      "extensions": [".css", ".scss", ".less"]
+    },
+    "html": {
+      "command": ["vscode-html-language-server", "--stdio"],
+      "extensions": [".html", ".htm"]
+    },
+    "json": {
+      "command": ["vscode-json-language-server", "--stdio"],
+      "extensions": [".json", ".jsonc"]
+    }
+  }
+}
+JSONEOF
+ENV PATH="/home/coder/.local/share/opencode/bin/jdtls/bin:${PATH}"
+ENV OPENCODE_CONFIG=/opt/lombok/opencode-lombok.json
 
 # Create necessary directories with proper permissions
 RUN mkdir -p /home/coder/.config/opencode && \

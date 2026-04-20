@@ -7,7 +7,7 @@ Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in
 **Key files:**
 - `opencode-dockerized.sh` — Main wrapper (build, run, auth, update, config, clean commands)
 - `config-lib.sh` — Shared library sourced by other scripts (config parsing, mount/env arg building, shared volume logic, interactive prompts). **Not executable directly.**
-- `Dockerfile` — Container image (Debian bookworm-slim + Node.js/NVM + Java 21/SDKMAN + Bun + OpenCode)
+- `Dockerfile` — Container image (Debian bookworm-slim + Node.js/NVM + Java 17+25/SDKMAN + Bun + OpenCode)
 - `entrypoint.sh` — Container entrypoint (UID/GID mapping, Docker socket permissions)
 - `setup.sh` — First-time config directory initialization
 - `run-simple.sh` — Simplified alternative runner (uses shared logic from config-lib.sh)
@@ -158,7 +158,7 @@ env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
 ### Dockerfile Conventions
 
 - Base image: `debian:bookworm-slim` (pinned, not `latest`)
-- Parameterize tool versions via `ARG`: `ARG NVM_VERSION=v0.40.1`, `ARG JAVA_VERSION=21.0.5-tem`
+- Parameterize tool versions via `ARG`: `ARG NVM_VERSION=v0.40.1`, `ARG JAVA_17_VERSION=17.0.18-tem`, `ARG JAVA_21_VERSION=21.0.10-tem`, `ARG JAVA_25_VERSION=25.0.2-tem`
 - Clean apt cache in same RUN layer: `&& rm -rf /var/lib/apt/lists/*`
 - Install Docker CLI only (`docker-ce-cli`), never the daemon
 - System packages as root; dev tools (NVM, SDKMAN, uv, Bun) as non-root `coder` user
