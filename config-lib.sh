@@ -214,6 +214,7 @@ build_common_docker_args() {
         -e "HOST_GID=$(id -g)"
         -e "TERM=${TERM:-xterm-256color}"
         -e "OPENSPEC_SUPPORT=$OPENSPEC_SUPPORT"
+        -e "OMO_DISABLE_POSTHOG=true"
     )
 }
 
