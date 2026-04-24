@@ -91,6 +91,19 @@ if [ "${OPENSPEC_SUPPORT:-false}" = "true" ]; then
     fi
 fi
 
+# Patch oh-my-opencode/oh-my-openagent: cap variant "max" to "high" for provider compatibility
+# github-copilot rejects effort:"max" but the anthropic effort hook skips github-copilot entirely,
+# so we must patch both agent configs (variant: "max") and the clamp ceiling (opus: "max")
+OMO_PACKAGES_DIR="/home/coder/.cache/opencode/packages"
+for omo_dist in \
+    "$OMO_PACKAGES_DIR/oh-my-opencode@latest/node_modules/oh-my-opencode/dist/index.js" \
+    "$OMO_PACKAGES_DIR/oh-my-openagent@latest/node_modules/oh-my-openagent/dist/index.js"; do
+    if [ -f "$omo_dist" ] && grep -q '"max"' "$omo_dist"; then
+        sed -i 's/variant: "max"/variant: "high"/g; s/opus: "max"/opus: "high"/' "$omo_dist"
+        chown "$TARGET_UID:$TARGET_GID" "$omo_dist" 2>/dev/null || true
+    fi
+done
+
 # Use setpriv to drop privileges and exec the command as the mapped user
 # cd into the project working directory before executing
 exec setpriv --reuid="$TARGET_UID" --regid="$TARGET_GID" --init-groups \
