@@ -5,7 +5,7 @@ FROM debian:bookworm-slim
 # Parameterize tool versions for easier updates
 ARG NVM_VERSION=v0.40.1
 ARG JAVA_17_VERSION=17.0.18-tem
-ARG JAVA_21_VERSION=21.0.10-tem
+ARG JAVA_21_VERSION=21.0.11-tem
 ARG JAVA_25_VERSION=25.0.2-tem
 ARG MAVEN_VERSION=3.9.14
 
@@ -65,7 +65,8 @@ RUN curl -s "https://get.sdkman.io" | bash && \
     sdk install java ${JAVA_25_VERSION} && \
     sdk default java ${JAVA_17_VERSION} && \
     sdk install maven ${MAVEN_VERSION} && \
-    sdk default maven ${MAVEN_VERSION}"
+    sdk default maven ${MAVEN_VERSION}" && \
+    ln -sf /home/coder/.sdkman/candidates/java/${JAVA_21_VERSION} /home/coder/.sdkman/candidates/java/21-temurin
 
 # Install NVM and Node.js LTS as coder user
 ENV NVM_DIR="/home/coder/.nvm"
@@ -131,7 +132,7 @@ RUN cat > /opt/lombok/opencode-lombok.json << JSONEOF
   "\$schema": "https://opencode.ai/config.json",
   "lsp": {
     "jdtls": {
-      "command": ["jdtls", "--java-executable", "/home/coder/.sdkman/candidates/java/${JAVA_21_VERSION}/bin/java", "--jvm-arg=-javaagent:/opt/lombok/lombok.jar"],
+      "command": ["jdtls", "--java-executable", "/home/coder/.sdkman/candidates/java/21-temurin/bin/java", "--jvm-arg=-javaagent:/opt/lombok/lombok.jar"],
       "extensions": [".java"]
     },
     "typescript-language-server": {
