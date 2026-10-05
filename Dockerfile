@@ -4,9 +4,10 @@ FROM debian:bookworm-slim
 
 # Parameterize tool versions for easier updates
 ARG NVM_VERSION=v0.40.1
-ARG JAVA_17_VERSION=17.0.18-tem
-ARG JAVA_21_VERSION=21.0.11-tem
-ARG JAVA_25_VERSION=25.0.2-tem
+ARG JAVA_11_VERSION=11.0.25-tem
+ARG JAVA_17_VERSION=17.0.13-tem
+ARG JAVA_21_VERSION=21.0.5-tem
+ARG JAVA_25_VERSION=25.0.3-tem
 ARG MAVEN_VERSION=3.9.14
 
 # Install base dependencies and useful CLI tools for coding agents
@@ -51,22 +52,21 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
 RUN useradd -m -s /bin/bash -u 1000 coder && \
     echo "coder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Install SDKMAN, Java (multiple versions) and Maven as coder user
-# Java 17 (default for builds), 21 (for jdtls LSP), and 25 are installed.
-# To switch at runtime: sdk use java <version>   (current shell only)
-#                    or: sdk default java <version> (all future shells)
-# Available versions: sdk list java | grep installed
+# Install SDKMAN and Java LTS versions (11, 17, 21) as coder user; default is 21
 USER coder
 WORKDIR /home/coder
 RUN curl -s "https://get.sdkman.io" | bash && \
     bash -c "source /home/coder/.sdkman/bin/sdkman-init.sh && \
+    sdk install java ${JAVA_11_VERSION} && \
     sdk install java ${JAVA_17_VERSION} && \
+    sdk install java ${JAVA_21_VERSION} && \
+    sdk install java ${JAVA_25_VERSION} && \
+    sdk default java ${JAVA_21_VERSION}" && \
     sdk install java ${JAVA_21_VERSION} && \
     sdk install java ${JAVA_25_VERSION} && \
     sdk default java ${JAVA_17_VERSION} && \
     sdk install maven ${MAVEN_VERSION} && \
-    sdk default maven ${MAVEN_VERSION}" && \
-    ln -sf /home/coder/.sdkman/candidates/java/${JAVA_21_VERSION} /home/coder/.sdkman/candidates/java/21-temurin
+    sdk default maven ${MAVEN_VERSION}"
 
 # Install NVM and Node.js LTS as coder user
 ENV NVM_DIR="/home/coder/.nvm"
@@ -105,12 +105,11 @@ ENV BUN_INSTALL="/home/coder/.bun"
 ENV PATH="$BUN_INSTALL/bin:$NVM_DIR/default:/home/coder/.local/bin:/home/coder/.sdkman/candidates/java/current/bin:/home/coder/.sdkman/candidates/maven/current/bin:$PATH"
 ENV JAVA_HOME="/home/coder/.sdkman/candidates/java/current"
 
-# Install OpenCode and OpenSpec globally
-# OpenSpec: Spec-driven development (SDD) for AI coding assistants
-# See: https://github.com/Fission-AI/OpenSpec/
+# Install OpenCode V2 globally
+# The package postinstall selects the native binary for the platform
 # ARG OPENCODE_BUILD_TIME is only passed during 'update' to bust cache
 ARG OPENCODE_BUILD_TIME=0
-RUN bash -c "source $NVM_DIR/nvm.sh && npm install -g opencode-ai@latest @fission-ai/openspec@latest"
+RUN bash -c "source $NVM_DIR/nvm.sh && npm install -g @opencode/cli@latest"
 
 # Switch back to root for entrypoint setup
 USER root
@@ -159,11 +158,10 @@ ENV OPENCODE_CONFIG=/opt/lombok/opencode-lombok.json
 
 # Create necessary directories with proper permissions
 RUN mkdir -p /home/coder/.config/opencode && \
-    mkdir -p /home/coder/.config/openspec && \
     mkdir -p /home/coder/.local/share/opencode && \
+    mkdir -p /home/coder/.local/state/opencode && \
     mkdir -p /home/coder/.cache/opencode && \
     mkdir -p /home/coder/.cache/oh-my-opencode && \
-    mkdir -p /home/coder/.cache/openspec && \
     mkdir -p /home/coder/.gradle && \
     mkdir -p /home/coder/.npm && \
     mkdir -p /home/coder/.m2 && \

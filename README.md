@@ -151,7 +151,7 @@ sudo cp /path/to/opencode-dockerized/completions/zsh.sh /usr/local/share/zsh/sit
 ```
 
 After installation, you'll get:
-- Command completion (`run`, `build`, `update`, `version`, `auth`, `config`, `clean`, `help`)
+- Command completion (`run`, `build`, `update`, `version`, `auth`, `models`, `exec`, `mcp`, `plugin`, `stats`, `debug`, `config`, `clean`, `help`)
 - Subcommand completion for `config` (`show`, `edit`, `path`)
 - Directory completion for the `run` command
 - Helpful descriptions for each command
@@ -165,6 +165,12 @@ After installation, you'll get:
 opencode-dockerized build          # Build Docker image
 opencode-dockerized auth           # Authenticate with LLM provider
 opencode-dockerized run [DIR]      # Run OpenCode (default: current dir)
+opencode-dockerized models         # List available models
+opencode-dockerized exec "..."     # Non-interactive prompt
+opencode-dockerized mcp list       # MCP servers and their status
+opencode-dockerized plugin list    # Loaded plugins
+opencode-dockerized stats --days 7 # Usage statistics
+opencode-dockerized debug paths    # Resolved data/config/cache paths
 opencode-dockerized update         # Update OpenCode version
 opencode-dockerized version        # Show version
 opencode-dockerized config show    # Show parsed configuration
@@ -234,13 +240,30 @@ TERM=xterm-256color
 |-----------|---------------|------|---------|
 | `$PROJECT_DIR` | `$PROJECT_DIR` (with `$HOME` stripped) | read-write | Your project files |
 | `~/.config/opencode/` | `/home/coder/.config/opencode/` | read-only | OpenCode & oh-my-opencode config, skills, commands, agents |
-| `~/.local/share/opencode/` | `/home/coder/.local/share/opencode/` | read-write | Auth, logs, sessions, storage |
+| `~/.config/opencode/cli.json` | `/home/coder/.config/opencode/cli.json` | read-write | OpenCode V2 terminal client settings |
+| `~/.local/share/opencode/` | `/home/coder/.local/share/opencode/` | read-write | Auth database, logs, sessions, storage |
+| `~/.local/state/opencode/` | `/home/coder/.local/state/opencode/` | read-write | Selected model, prompt history, locks |
 | `~/.cache/opencode/` | `/home/coder/.cache/opencode/` | read-write | Provider package cache |
 | `~/.cache/oh-my-opencode/` | `/home/coder/.cache/oh-my-opencode/` | read-write | Oh My OpenCode cache |
 | `~/.gradle/gradle.properties` | `/home/coder/.gradle/gradle.properties` | read-only | Gradle config (optional) |
 | `~/.npmrc` | `/home/coder/.npmrc` | read-only | NPM config (optional) |
 | `~/.mcp-auth/` | `/home/coder/.mcp-auth/` | read-only | MCP authentication (optional) |
 
+#### Migrating V1 `tui.json` settings
+
+OpenCode V2 replaces V1's `tui.json(c)` with a single global `~/.config/opencode/cli.json`
+([migration guide](https://opencode.ai/v2/docs/migrate-v1/#terminal-client-configuration)).
+V2 only migrates `tui.json` automatically when `cli.json` does not exist yet, but the wrapper
+creates an empty `cli.json` before the first run so it can be mounted read-write over the
+read-only config directory. **The wrapper therefore never starts this migration on its own.**
+
+To keep your V1 terminal settings, do one of the following before (or after) your first run:
+
+- Run a native V2 `opencode` once on the host with no `cli.json` present, and let it migrate `tui.json`.
+- Or move the settings into `~/.config/opencode/cli.json` by hand, following the
+  [CLI settings reference](https://opencode.ai/v2/docs/cli/config/).
+
+Project-local `tui.json` files are not migrated; V2 client settings are global only.
 
 ### Custom Global Configuration (Optional)
 
@@ -268,7 +291,6 @@ Configuration is stored in `~/.config/opencode-dockerized/config` (INI format):
 # Settings (built-in features)
 # Format: setting.<name>=<value>
 setting.ssh_agent_support=true
-setting.openspec_support=true
 
 # Custom volume mounts (read-only by default)
 # Format: mount.<name>=<host_path>:<container_path>[:rw]
@@ -404,51 +426,6 @@ The container includes full support for [Oh My OpenCode](https://github.com/code
 
 For more information, see the [Oh My OpenCode documentation](https://github.com/code-yeongyu/oh-my-opencode).
 
-### OpenSpec Support
-
-The container includes [OpenSpec](https://github.com/Fission-AI/OpenSpec/), a spec-driven development (SDD) framework for AI coding assistants. OpenSpec helps you agree on what to build before any code is written.
-
-**To enable OpenSpec:**
-
-1. During setup, answer "y" when prompted for OpenSpec support:
-   ```bash
-   ./setup.sh
-   # ... when prompted:
-   # Enable OpenSpec support? (y/N): y
-   ```
-
-2. Or manually set in `~/.config/opencode-dockerized/config`:
-   ```ini
-   setting.openspec_support=true
-   ```
-
-**To use OpenSpec inside the container:**
-
-```bash
-# Initialize OpenSpec in your project (first time)
-openspec init
-
-# Start a new spec-driven change
-/opsx:new add-dark-mode
-
-# Fast-forward through planning artifacts
-/opsx:ff
-
-# Implement the planned tasks
-/opsx:apply
-
-# Archive completed change
-/opsx:archive
-```
-
-**Features:**
-- Spec-driven workflows with `/opsx:*` slash commands
-- Supports 20+ AI coding assistants (including OpenCode)
-- Lightweight spec layer for predictable AI coding
-- Works within the mounted project directory
-
-For more information, see the [OpenSpec documentation](https://github.com/Fission-AI/OpenSpec/).
-
 ### Python Development with uv
 
 The container includes [uv](https://docs.astral.sh/uv/), a fast Python package manager and project manager. Use it for:
@@ -558,7 +535,7 @@ opencode-dockerized update
 
 ### Core Files
 
-- **`Dockerfile`** - Container image definition (Debian + Node.js/NVM + Java/SDKMAN + Bun + OpenCode + OpenSpec)
+- **`Dockerfile`** - Container image definition (Debian + Node.js/NVM + Java/SDKMAN + Bun + OpenCode)
 - **`entrypoint.sh`** - UID/GID mapping for file permissions
 
 ### User Scripts
@@ -590,7 +567,7 @@ opencode-dockerized update
 1. **Base Image**: Uses Debian Bookworm slim for minimal footprint
 2. **Docker CLI Only**: Installs only Docker CLI (uses host's Docker daemon via socket)
 3. **Development Tools**: Includes Node.js (via NVM), Java (via SDKMAN), Python tooling (via uv), Bun, ast-grep, tmux, Git, and essential CLI tools
-4. **OpenCode & OpenSpec Installation**: Installs latest OpenCode and OpenSpec via npm
+4. **OpenCode Installation**: Installs latest OpenCode V2 (`@opencode/cli`) via npm
 5. **Oh My OpenCode Support**: Pre-configured with tools needed for oh-my-opencode plugin (ast-grep, tmux, bun)
 6. **User Management**: Creates non-root `coder` user with UID/GID matching
 7. **Entrypoint**: Adjusts permissions and switches to non-root user
@@ -687,7 +664,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 This project uses and packages the following third-party software:
 
 - **[OpenCode](https://github.com/sst/opencode)** - Apache 2.0 License (packaged in container)
-- **[OpenSpec](https://github.com/Fission-AI/OpenSpec/)** - MIT License (packaged in container)
 - **[Oh My OpenCode](https://github.com/code-yeongyu/oh-my-opencode)** - MIT License (optional plugin support)
 - **Docker CLI** - Apache 2.0 License (packaged in container)
 - **Node.js** - MIT License (packaged in container)

@@ -62,25 +62,13 @@ ensure_dir "$HOME/.config/opencode/agent"
 ensure_dir "$HOME/.config/opencode/plugin"
 ensure_dir "$HOME/.config/opencode/command"
 ensure_dir "$HOME/.local/share/opencode"
+ensure_dir "$HOME/.local/state/opencode"
 ensure_dir "$HOME/.cache/opencode"
 ensure_dir "$HOME/.cache/oh-my-opencode"
 ensure_dir "$HOME/.mcp-auth"
 
 # Check/create OpenCode config files
 ensure_any_file '{}' "$HOME/.config/opencode/opencode.json" "$HOME/.config/opencode/opencode.jsonc"
-
-# Copy OpenSpec config if not already present
-ensure_dir "$HOME/.config/openspec"
-if [ ! -f "$HOME/.config/openspec/config.json" ]; then
-    if [ -f "$SCRIPT_DIR/config/openspec/config.json" ]; then
-        cp "$SCRIPT_DIR/config/openspec/config.json" "$HOME/.config/openspec/config.json"
-        echo -e "${GREEN}✓${NC} Copied OpenSpec config to ~/.config/openspec/config.json"
-    else
-        print_warning "OpenSpec config template not found at $SCRIPT_DIR/config/openspec/config.json"
-    fi
-else
-    echo -e "${GREEN}✓${NC} OpenSpec config already exists at ~/.config/openspec/config.json"
-fi
 
 interactive_config_setup
 
@@ -430,14 +418,6 @@ echo ""
 echo "  3. Run OpenCode in your project:"
 echo "     opencode-dockerized run /path/to/your/project"
 echo ""
-
-# Show OpenSpec instructions only if it was enabled
-if [ "$OPENSPEC_SUPPORT" = true ]; then
-    echo "  4. OpenSpec will automatically initialize when you first run OpenCode"
-    echo "     in a project that doesn't have an openspec/ directory yet."
-    echo "     It runs: openspec init --tools opencode && openspec update"
-    echo ""
-fi
 
 echo "Note: If you already have OpenCode configured locally, your"
 echo "      existing authentication will be automatically available."

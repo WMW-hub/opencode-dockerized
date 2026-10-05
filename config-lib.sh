@@ -14,6 +14,10 @@
 CONFIG_DIR="${CONFIG_DIR:-$HOME/.config/opencode-dockerized}"
 CONFIG_FILE="${CONFIG_FILE:-$CONFIG_DIR/config}"
 
+# V2 terminal client settings file — owned and rewritten by the client itself,
+# so it needs a writable mount on top of the read-only OpenCode config directory.
+OPENCODE_CLI_CONFIG="$HOME/.config/opencode/cli.json"
+
 # ============================================
 # COLOR DEFINITIONS (with defaults if not set)
 # ============================================
@@ -71,7 +75,6 @@ declare -a DOCKER_ENV_ARGS=()    # Array of docker -e arguments (populated by bu
 declare -a VOLUME_ARGS=()        # Array of standard volume mount arguments (populated by build_standard_volume_args)
 declare -a GIT_WORKTREE_ARGS=()  # Array of docker args for git worktree support (populated by build_git_worktree_args)
 SSH_AGENT_SUPPORT=false          # Boolean flag for SSH agent forwarding support
-OPENSPEC_SUPPORT=false           # Boolean flag for OpenSpec (spec-driven development) support
 
 # ============================================
 # SHARED HELPERS
@@ -95,15 +98,14 @@ compute_container_path() {
 # Ensure all required OpenCode directories exist on host
 ensure_opencode_dirs() {
     mkdir -p "$HOME/.local/share/opencode" 2>/dev/null || true
+    mkdir -p "$HOME/.local/state/opencode" 2>/dev/null || true
     mkdir -p "$HOME/.cache/opencode" 2>/dev/null || true
     mkdir -p "$HOME/.cache/oh-my-opencode" 2>/dev/null || true
     mkdir -p "$HOME/.config/opencode" 2>/dev/null || true
-
-    # Create OpenSpec directories if OpenSpec support is enabled
-    if [ "$OPENSPEC_SUPPORT" = true ]; then
-        mkdir -p "$HOME/.cache/openspec" 2>/dev/null || true
-        mkdir -p "$HOME/.config/openspec" 2>/dev/null || true
-    fi
+    # Created empty so the client can persist its settings through the read-only config mount
+    [ -f "$OPENCODE_CLI_CONFIG" ] || echo '{}' > "$OPENCODE_CLI_CONFIG" 2>/dev/null || true
+    # Bun's default install cache — created up front so the mount is always available
+    mkdir -p "$HOME/.bun/install/cache" 2>/dev/null || true
 }
 
 # Check if Docker image exists locally
@@ -213,19 +215,32 @@ build_common_docker_args() {
         -e "HOST_UID=$(id -u)"
         -e "HOST_GID=$(id -g)"
         -e "TERM=${TERM:-xterm-256color}"
-        -e "OPENSPEC_SUPPORT=$OPENSPEC_SUPPORT"
         -e "OMO_DISABLE_POSTHOG=true"
     )
+
+    # Pass terminal identification variables so applications inside the container
+    # can detect the host terminal and use its capabilities correctly.
+    # Required for kitty OSC 99 terminal-mediated desktop notifications, true-color
+    # rendering, and other terminal-specific features. All are conditional so they
+    # have no effect on non-kitty terminals.
+    local term_var
+    for term_var in TERM_PROGRAM TERM_PROGRAM_VERSION KITTY_WINDOW_ID COLORTERM; do
+        if [ -n "${!term_var}" ]; then
+            DOCKER_COMMON_ARGS+=(-e "$term_var=${!term_var}")
+        fi
+    done
 }
 
 # Build standard volume mount arguments for OpenCode directories
 # Populates VOLUME_ARGS and CONTAINER_WORKDIR
 # The project is mounted at a path derived from the host path (with $HOME stripped)
 # so that OpenCode stores a unique, meaningful directory per project in its session DB.
-# Usage: build_standard_volume_args "/path/to/project" [include_docker_socket]
+# Pass config_writable=true when OpenCode must write to ~/.config/opencode (e.g. auth login).
+# Usage: build_standard_volume_args "/path/to/project" [include_docker_socket] [config_writable]
 build_standard_volume_args() {
     local project_dir="$1"
     local include_docker_socket="${2:-false}"
+    local config_writable="${3:-false}"
 
     VOLUME_ARGS=()
 
@@ -234,17 +249,28 @@ build_standard_volume_args() {
     CONTAINER_WORKDIR=$(compute_container_path "$project_dir")
 
     # Project directory (read-write) — mounted at the computed path
-    VOLUME_ARGS+=(-v "$project_dir:$CONTAINER_WORKDIR")
+    # Skipped when no project is given (e.g. auth) or when it resolves to $HOME itself
+    if [ -n "$project_dir" ] && [ -n "$CONTAINER_WORKDIR" ]; then
+        VOLUME_ARGS+=(-v "$project_dir:$CONTAINER_WORKDIR")
+        build_git_worktree_args "$project_dir"
+    fi
 
-    # Git worktree support: mount main .git directory if project is a worktree
-    build_git_worktree_args "$project_dir"
-
-    # OpenCode configuration directory (read-only)
+    # OpenCode configuration directory
     # Includes: opencode.json, AGENTS.md, .env, agent/, command/, plugin/, node_modules/, etc.
+    # Read-only by default; writable during auth so OpenCode can persist opencode.json.
     if [ -d "$HOME/.config/opencode" ]; then
-        VOLUME_ARGS+=(-v "$HOME/.config/opencode:/home/coder/.config/opencode:ro")
+        if [ "$config_writable" = true ]; then
+            VOLUME_ARGS+=(-v "$HOME/.config/opencode:/home/coder/.config/opencode")
+        else
+            VOLUME_ARGS+=(-v "$HOME/.config/opencode:/home/coder/.config/opencode:ro")
+        fi
     else
         config_warning "OpenCode config directory not found at $HOME/.config/opencode"
+    fi
+
+    # V2 terminal client settings — re-mounted read-write on top of the config mount
+    if [ "$config_writable" != true ] && [ -f "$OPENCODE_CLI_CONFIG" ]; then
+        VOLUME_ARGS+=(-v "$OPENCODE_CLI_CONFIG:/home/coder/.config/opencode/cli.json")
     fi
 
     # OpenCode data directory (read-write for auth, logs, sessions, storage)
@@ -253,6 +279,11 @@ build_standard_volume_args() {
     else
         config_warning "OpenCode data directory not found at $HOME/.local/share/opencode"
         config_info "You'll need to run 'opencode auth login' inside the container"
+    fi
+
+    # OpenCode state directory (read-write for selected model, prompt history, locks)
+    if [ -d "$HOME/.local/state/opencode" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.local/state/opencode:/home/coder/.local/state/opencode")
     fi
 
     # OpenCode provider package cache (improves startup time and prevents API errors)
@@ -266,26 +297,38 @@ build_standard_volume_args() {
         VOLUME_ARGS+=(-v "$HOME/.cache/oh-my-opencode:/home/coder/.cache/oh-my-opencode")
     fi
 
-    # OpenSpec cache directory (only when OpenSpec support is enabled)
-    if [ "$OPENSPEC_SUPPORT" = true ] && [ -d "$HOME/.cache/openspec" ]; then
-        VOLUME_ARGS+=(-v "$HOME/.cache/openspec:/home/coder/.cache/openspec")
-        config_info "OpenSpec support enabled — cache directory mounted"
-    fi
-
-    # OpenSpec config directory (only when OpenSpec support is enabled)
-    if [ "$OPENSPEC_SUPPORT" = true ] && [ -d "$HOME/.config/openspec" ]; then
-        VOLUME_ARGS+=(-v "$HOME/.config/openspec:/home/coder/.config/openspec:ro")
-        config_info "OpenSpec config directory mounted"
-    fi
-
     # MCP authentication directory (optional)
     if [ -d "$HOME/.mcp-auth" ]; then
         VOLUME_ARGS+=(-v "$HOME/.mcp-auth:/home/coder/.mcp-auth:ro")
     fi
 
-    # Gradle properties (optional)
+    # Gradle home (optional) — shares the dependency and wrapper cache with the host
+    # gradle.properties is re-mounted read-only on top so credentials cannot be rewritten
+    if [ -d "$HOME/.gradle" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.gradle:/home/coder/.gradle")
+    fi
     if [ -f "$HOME/.gradle/gradle.properties" ]; then
         VOLUME_ARGS+=(-v "$HOME/.gradle/gradle.properties:/home/coder/.gradle/gradle.properties:ro")
+    fi
+
+    # Maven repository (optional) — avoids re-downloading artifacts on every run
+    if [ -d "$HOME/.m2" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.m2:/home/coder/.m2")
+    fi
+
+    # npm cache (optional) — speeds up npx-based local MCP servers and plugin installs
+    if [ -d "$HOME/.npm" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.npm:/home/coder/.npm")
+    fi
+
+    # Bun install cache (optional)
+    if [ -d "$HOME/.bun/install/cache" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.bun/install/cache:/home/coder/.bun/install/cache")
+    fi
+
+    # Git configuration (optional) — ensures commits use the host user's name and email
+    if command -v git >/dev/null 2>&1 && [ -f "$HOME/.gitconfig" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.gitconfig:/home/coder/.gitconfig:ro")
     fi
 
     # NPM configuration (optional)
@@ -296,6 +339,18 @@ build_standard_volume_args() {
     # Maven configuration (optional)
     if [ -f "$HOME/.m2/settings.xml" ]; then
         VOLUME_ARGS+=(-v "$HOME/.m2/settings.xml:/home/coder/.m2/settings.xml:ro")
+    fi
+
+    # Claude Code compatibility directory (optional)
+    # Provides fallback CLAUDE.md rules and ~/.claude/skills/ when no opencode equivalents exist
+    if [ -d "$HOME/.claude" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.claude:/home/coder/.claude:ro")
+    fi
+
+    # Agent-compatible skills directory (optional)
+    # OpenCode reads skills from ~/.agents/skills/<name>/SKILL.md
+    if [ -d "$HOME/.agents" ]; then
+        VOLUME_ARGS+=(-v "$HOME/.agents:/home/coder/.agents:ro")
     fi
 
     # Docker socket (optional, for Docker-in-Docker operations)
@@ -324,13 +379,6 @@ init_config_file() {
 # SSH Agent Forwarding (enables git over SSH in container)
 # Automatically mounts SSH_AUTH_SOCK socket and passes the environment variable
 # setting.ssh_agent_support=false
-
-# OpenSpec Support (spec-driven development for AI coding assistants)
-# When enabled, OpenSpec is available inside the container for spec-driven workflows
-# On first run, 'openspec init --tools opencode' is automatically executed in new projects
-# Then 'openspec update' runs on every launch to keep instruction files in sync
-# See: https://github.com/Fission-AI/OpenSpec/
-# setting.openspec_support=false
 
 # Custom volume mounts (read-only by default)
 # Format: mount.<name>=<host_path>:<container_path>[:rw]
@@ -381,7 +429,6 @@ load_config() {
 
     # Read settings (lines starting with "setting.")
     SSH_AGENT_SUPPORT=false
-    OPENSPEC_SUPPORT=false
     while IFS='=' read -r key value; do
         [[ "$key" =~ ^[[:space:]]*# ]] && continue
         [[ "$key" =~ ^[[:space:]]*setting\. ]] || continue
@@ -389,7 +436,6 @@ load_config() {
         value="${value#"${value%%[![:space:]]*}"}"
         value="${value%"${value##*[![:space:]]}"}"
         [[ "$key" =~ ssh_agent_support ]] && [[ "$value" == "true" ]] && SSH_AGENT_SUPPORT=true
-        [[ "$key" =~ openspec_support ]] && [[ "$value" == "true" ]] && OPENSPEC_SUPPORT=true
     done < "$CONFIG_FILE"
 
     return 0
@@ -407,11 +453,6 @@ save_config() {
         echo "# SSH Agent Forwarding (enables git over SSH in container)"
         echo "# Automatically mounts SSH_AUTH_SOCK socket and passes the environment variable"
         echo "setting.ssh_agent_support=$SSH_AGENT_SUPPORT"
-        echo ""
-        echo "# OpenSpec Support (spec-driven development for AI coding assistants)"
-        echo "# When enabled, OpenSpec is available inside the container for spec-driven workflows"
-        echo "# See: https://github.com/Fission-AI/OpenSpec/"
-        echo "setting.openspec_support=$OPENSPEC_SUPPORT"
         echo ""
         echo "# Custom volume mounts (read-only by default)"
         echo "# Format: mount.<name>=<host_path>:<container_path>[:rw]"
@@ -781,48 +822,12 @@ prompt_ssh_agent_support() {
     fi
 }
 
-# Interactive OpenSpec support prompt
-# If OPENSPEC_SUPPORT is already set (from a previous config), show current value
-# and only ask if user wants to change it
-prompt_openspec_support() {
-    echo ""
-    config_info "OpenSpec Support (https://github.com/Fission-AI/OpenSpec/)"
-
-    if [ "$OPENSPEC_SUPPORT" = true ]; then
-        config_success "OpenSpec support is currently enabled"
-        read -r -p "Keep OpenSpec enabled? (Y/n): " openspec
-        if [[ "$openspec" =~ ^[Nn]$ ]]; then
-            OPENSPEC_SUPPORT=false
-            config_info "OpenSpec support disabled"
-        else
-            config_success "OpenSpec support remains enabled"
-        fi
-    else
-        echo "OpenSpec adds spec-driven development (SDD) to AI coding assistants."
-        echo "It helps you agree on what to build before any code is written."
-        echo "When enabled, 'openspec init --tools opencode' runs automatically on first"
-        echo "launch for each project, then 'openspec update' keeps instruction files in"
-        echo "sync on every run. The 'openspec' CLI is also available in the container."
-        echo ""
-
-        read -r -p "Enable OpenSpec support? (y/N): " openspec
-        if [[ "$openspec" =~ ^[Yy]$ ]]; then
-            OPENSPEC_SUPPORT=true
-            config_success "OpenSpec support enabled"
-        else
-            OPENSPEC_SUPPORT=false
-            config_info "OpenSpec support disabled"
-        fi
-    fi
-}
-
 # Print current configuration (for debugging/info)
 print_config() {
     echo ""
     echo "Current configuration:"
     echo "  Config file: $CONFIG_FILE"
     echo "  SSH agent forwarding: $SSH_AGENT_SUPPORT"
-    echo "  OpenSpec support: $OPENSPEC_SUPPORT"
 
     if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ]; then
         echo ""
@@ -866,7 +871,6 @@ interactive_config_setup() {
         append|overwrite)
             [ "$CONFIG_MODE" = "append" ] && load_config
             prompt_ssh_agent_support
-            prompt_openspec_support
             prompt_custom_mounts
             prompt_env_vars
             save_config
@@ -876,10 +880,9 @@ interactive_config_setup() {
             read -r -p "Would you like to configure custom mounts and environment variables now? (y/N): " setup_custom
             if [[ "$setup_custom" =~ ^[Yy]$ ]]; then
                 prompt_ssh_agent_support
-                prompt_openspec_support
                 prompt_custom_mounts
                 prompt_env_vars
-                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ] || [ "$OPENSPEC_SUPPORT" = true ]; then
+                if [ ${#CUSTOM_MOUNTS[@]} -gt 0 ] || [ ${#CUSTOM_ENV_VARS[@]} -gt 0 ] || [ "$SSH_AGENT_SUPPORT" = true ]; then
                     save_config
                     print_config
                 else

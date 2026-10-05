@@ -2,12 +2,12 @@
 
 ## Project Overview
 
-Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in secure, isolated containers. Sandboxes OpenCode so its blast radius is limited to the mounted project directory. Supports [Oh My OpenCode](https://github.com/code-yeongyu/oh-my-opencode) plugin and [OpenSpec](https://github.com/Fission-AI/OpenSpec/) spec-driven development. All source is Bash shell scripts and a Dockerfile — no compiled code, no JS/Python source, no package manager files.
+Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in secure, isolated containers. Sandboxes OpenCode so its blast radius is limited to the mounted project directory. Supports the [Oh My OpenCode](https://github.com/code-yeongyu/oh-my-opencode) plugin. All source is Bash shell scripts and a Dockerfile — no compiled code, no JS/Python source, no package manager files.
 
 **Key files:**
-- `opencode-dockerized.sh` — Main wrapper (build, run, auth, update, config, clean commands)
+- `opencode-dockerized.sh` — Main wrapper (build, run, auth, models, exec, mcp, plugin, stats, debug, update, config, clean commands)
 - `config-lib.sh` — Shared library sourced by other scripts (config parsing, mount/env arg building, shared volume logic, interactive prompts). **Not executable directly.**
-- `Dockerfile` — Container image (Debian bookworm-slim + Node.js/NVM + Java 17+21+25/SDKMAN + Bun + OpenCode + OpenSpec)
+- `Dockerfile` — Container image (Debian bookworm-slim + Node.js/NVM + Java 17+21+25/SDKMAN + Bun + OpenCode V2 (`@opencode/cli`))
 - `entrypoint.sh` — Container entrypoint (UID/GID mapping, Docker socket permissions)
 - `setup.sh` — First-time config directory initialization
 - `run-simple.sh` — Simplified alternative runner (uses shared logic from config-lib.sh)
@@ -22,6 +22,12 @@ Shell script-based Docker wrapper for running [OpenCode](https://opencode.ai) in
 ./opencode-dockerized.sh build          # Build Docker image (uses layer cache)
 ./opencode-dockerized.sh run [DIR]      # Run OpenCode (default: current dir)
 ./opencode-dockerized.sh auth           # Authenticate OpenCode
+./opencode-dockerized.sh models [DIR]   # List models available to configured providers
+./opencode-dockerized.sh exec MSG       # Non-interactive prompt (opencode run)
+./opencode-dockerized.sh mcp [ARGS]     # Manage MCP servers (default: list)
+./opencode-dockerized.sh plugin [ARGS]  # Manage plugins (default: list)
+./opencode-dockerized.sh stats [OPTS]   # Usage statistics
+./opencode-dockerized.sh debug [ARGS]   # Debug tools (default: paths)
 ./opencode-dockerized.sh update         # Update OpenCode (cache-busting rebuild)
 ./opencode-dockerized.sh version        # Show OpenCode version
 ./opencode-dockerized.sh config show    # Show parsed configuration
@@ -74,7 +80,7 @@ source "$SCRIPT_DIR/config-lib.sh"
 | Constants         | UPPER_SNAKE        | `IMAGE_NAME`, `SCRIPT_DIR`, `CONFIG_DIR`      |
 | Local variables   | lower_snake        | `project_dir`, `container_name`               |
 | Global arrays     | UPPER_SNAKE        | `CUSTOM_MOUNTS=()`, `DOCKER_MOUNT_ARGS=()`   |
-| Booleans          | UPPER_SNAKE=false  | `SSH_AGENT_SUPPORT=false`, `OPENSPEC_SUPPORT=false` |
+| Booleans          | UPPER_SNAKE=false  | `SSH_AGENT_SUPPORT=false` |
 | Docker images     | kebab-case:tag     | `opencode-dockerized:latest`                  |
 | Container names   | kebab-case-suffix  | `opencode-myproject-abc123`                   |
 
@@ -151,7 +157,6 @@ main "$@"
 INI-style (`key.name=value`), parsed with `while IFS='=' read -r key value` loops:
 ```ini
 setting.ssh_agent_support=true
-setting.openspec_support=true
 mount.gitconfig=~/.gitconfig:/home/coder/.gitconfig
 env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
 ```
@@ -184,10 +189,17 @@ env.aws_bedrock=AWS_BEARER_TOKEN_BEDROCK
 | Host Path | Container Path | Mode | Purpose |
 |-----------|---------------|------|---------|
 | `$PROJECT_DIR` | `$PROJECT_DIR` (with `$HOME` stripped) | rw | Project files |
-| `~/.config/opencode/` | `/home/coder/.config/opencode/` | ro | Config, skills, agents |
-| `~/.local/share/opencode/` | `/home/coder/.local/share/opencode/` | rw | Auth, sessions |
+| `~/.config/opencode/` | `/home/coder/.config/opencode/` | ro | Config, skills, agents (rw during `auth`) |
+| `~/.config/opencode/cli.json` | `/home/coder/.config/opencode/cli.json` | rw | V2 terminal client settings, layered over the ro config mount |
+| `~/.local/share/opencode/` | `/home/coder/.local/share/opencode/` | rw | Auth database, sessions |
+| `~/.local/state/opencode/` | `/home/coder/.local/state/opencode/` | rw | Selected model, prompt history, locks |
 | `~/.cache/opencode/` | `/home/coder/.cache/opencode/` | rw | Provider cache |
 | `~/.cache/oh-my-opencode/` | `/home/coder/.cache/oh-my-opencode/` | rw | Plugin cache |
-| `~/.cache/openspec/` | `/home/coder/.cache/openspec/` | rw | OpenSpec cache (when enabled) |
-| `~/.config/openspec/` | `/home/coder/.config/openspec/` | ro | OpenSpec config (when enabled) |
+| `~/.gradle/` | `/home/coder/.gradle/` | rw | Gradle dependency + wrapper cache |
+| `~/.gradle/gradle.properties` | `/home/coder/.gradle/gradle.properties` | ro | Credentials, layered over the cache mount |
+| `~/.m2/` | `/home/coder/.m2/` | rw | Maven repository |
+| `~/.npm/` | `/home/coder/.npm/` | rw | npm cache for `npx`-based local MCP servers |
+| `~/.bun/install/cache/` | `/home/coder/.bun/install/cache/` | rw | Bun install cache |
+| `~/.claude/` | `/home/coder/.claude/` | ro | Claude Code compat: CLAUDE.md rules, skills/ |
+| `~/.agents/` | `/home/coder/.agents/` | ro | Agent-compatible skills (skills/<name>/SKILL.md) |
 | `/var/run/docker.sock` | `/var/run/docker.sock` | rw | Docker socket |
